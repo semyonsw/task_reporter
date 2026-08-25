@@ -1,0 +1,11 @@
+{
+    "python.defaultInterpreterPath": "/root/miniconda3/envs/movs/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "code-runner.runInTerminal": true,
+    "code-runner.executorMap": {
+        "python": "/root/miniconda3/envs/movs/bin/python -u"
+    },
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda"
+}
