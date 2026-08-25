@@ -34,7 +34,7 @@ try:
         QAbstractItemView,
     )
     from PySide6.QtCore import Qt, QTimer
-    from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor, QAction
+    from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor, QAction, QCursor
 
     GUI_AVAILABLE = True
 except ModuleNotFoundError:
@@ -156,20 +156,105 @@ def ensure_movs_python(script_path: str, args: list) -> None:
 # Qt platform probing
 # ---------------------------------------------------------------------------
 
-_QT_PROBE_SNIPPET = (
-    "import sys\n"
-    "from PySide6.QtWidgets import QApplication\n"
-    "QApplication([])\n"
-    "sys.stdout.write('QT_PROBE_OK')\n"
-)
+# Creating a QApplication only proves a plugin loaded. A compositor can accept
+# the connection and still never present the surface - that is the WSLg
+# "window is in the taskbar but nothing is on screen" failure. So the probe
+# opens a real toplevel and insists on seeing it mapped AND painted.
+#
+# The window is frameless, tool-class (no taskbar button) and fully
+# transparent, so it does not flash anything visible on the way past.
+_QT_RENDER_PROBE_SNIPPET = r"""
+import sys
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+
+painted = {"count": 0}
 
 
-def _qt_platform_candidates() -> list:
+class Probe(QWidget):
+    def paintEvent(self, event):
+        painted["count"] += 1
+        super().paintEvent(event)
+
+
+app = QApplication(sys.argv)
+probe = Probe(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
+probe.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+probe.setWindowOpacity(0.0)
+probe.resize(240, 160)
+QVBoxLayout(probe).addWidget(QLabel("probe"))
+probe.show()
+
+DEADLINE_MS = 4000
+elapsed = {"ms": 0}
+INTERVAL_MS = 100
+
+
+def report(ok):
+    handle = probe.windowHandle()
+    sys.stdout.write(
+        "QT_RENDER_%s platform=%s exposed=%s paints=%d size=%dx%d\n"
+        % (
+            "OK" if ok else "FAIL",
+            app.platformName(),
+            bool(handle and handle.isExposed()),
+            painted["count"],
+            probe.width(),
+            probe.height(),
+        )
+    )
+    sys.stdout.flush()
+    app.quit()
+
+
+def poll():
+    handle = probe.windowHandle()
+    exposed = bool(handle and handle.isExposed())
+    if exposed and painted["count"] > 0 and probe.width() > 0 and probe.height() > 0:
+        report(True)
+        return
+    elapsed["ms"] += INTERVAL_MS
+    if elapsed["ms"] >= DEADLINE_MS:
+        report(False)
+
+
+timer = QTimer()
+timer.timeout.connect(poll)
+timer.start(INTERVAL_MS)
+app.exec()
+"""
+
+
+# Platforms that put pixels on a real screen. The others Qt offers - offscreen,
+# minimal, vnc, linuxfb, eglfs - will happily map and paint into something the
+# user cannot see, which passes a render check and then hangs the event loop on
+# a window nobody can find or close. So they are never chosen automatically.
+VISUAL_QT_PLATFORMS = ("wayland", "wayland-egl", "xcb")
+
+
+def _qt_platform_candidates(forced: str = None) -> list:
+    """Platforms to try, best first.
+
+    Native wayland is preferred because it is the path WSLg is built around.
+    xcb (via XWayland) is the backstop: it survives some compositor states in
+    which the wayland surface is created but never presented.
+    """
     candidates = []
 
-    forced = (os.environ.get("QT_QPA_PLATFORM") or "").strip()
-    if forced:
-        candidates.append(forced)
+    # A deliberate choice - our own flag or our own env var - is honoured as
+    # given, including non-visual platforms, because that is what it is for.
+    deliberate = (
+        forced or os.environ.get("TASK_REPORT_QT_PLATFORM") or ""
+    ).strip()
+    if deliberate:
+        candidates.append(deliberate)
+
+    # QT_QPA_PLATFORM can be left behind by unrelated tooling, so it only gets
+    # a say when it names something the user could actually look at.
+    foreign = (os.environ.get("QT_QPA_PLATFORM") or "").strip()
+    if foreign and foreign in VISUAL_QT_PLATFORMS:
+        candidates.append(foreign)
+
     if (os.environ.get("WAYLAND_DISPLAY") or "").strip():
         candidates.append("wayland")
     if (os.environ.get("DISPLAY") or "").strip():
@@ -184,57 +269,81 @@ def _qt_platform_candidates() -> list:
     return ordered
 
 
-def probe_qt_platform():
-    """Find a Qt platform plugin that actually starts.
+def _probe_one_platform(candidate: str):
+    """Run the render probe for one platform.  Returns (ok, detail)."""
+    env = os.environ.copy()
+    env["QT_QPA_PLATFORM"] = candidate
+    # Keep the probe's own diagnostics out of the captured output.
+    env["QT_LOGGING_RULES"] = "qt.qpa.*=false"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _QT_RENDER_PROBE_SNIPPET],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=QT_PROBE_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "probe timed out (compositor never answered)"
+    except Exception as exc:
+        return False, f"probe could not run: {exc}"
 
-    This is the fix for "sometimes the UI doesn't open".  When no platform
-    plugin can be initialised Qt calls qFatal(), which aborts the *entire
-    process* with SIGABRT - not a Python exception, so a `try/except` around
-    QApplication() never gets to run its fallback.  Each candidate is therefore
-    tried inside a throwaway subprocess, where an abort costs us nothing.
+    stdout = result.stdout or ""
 
-    Returns (platform_name, failures).  platform_name is None when the GUI
-    cannot start at all; failures lists (candidate, reason) pairs for `--doctor`.
+    # The verdict is printed and flushed before teardown, so a crash while
+    # Qt unwinds does not invalidate a window that demonstrably rendered.
+    for line in stdout.splitlines():
+        if line.startswith("QT_RENDER_OK"):
+            return True, line.strip()
+        if line.startswith("QT_RENDER_FAIL"):
+            return False, "window never rendered - " + line.split(" ", 1)[-1].strip()
+
+    stderr_lines = [
+        line.strip()
+        for line in (result.stderr or "").splitlines()
+        if line.strip() and "xcb-cursor0" not in line
+    ]
+    if stderr_lines:
+        return False, stderr_lines[0]
+    if result.returncode != 0:
+        return False, f"probe exited with code {result.returncode}"
+    return False, "probe produced no verdict"
+
+
+def probe_qt_platform(forced: str = None):
+    """Find a Qt platform that can actually put a window on screen.
+
+    Two distinct failures are covered:
+
+    1. No platform plugin loads at all.  Qt calls qFatal() for this, which
+       aborts the *whole process* with SIGABRT rather than raising - so a
+       try/except around QApplication() never reaches its fallback.  Probing in
+       a throwaway subprocess makes the abort harmless.
+
+    2. A plugin loads, a window is created, and the compositor never presents
+       it.  That is the WSLg "taskbar button but no window" state, and an
+       init-only check sails straight past it.  The probe therefore requires a
+       window that is both exposed and painted.
+
+    Returns (platform_name, attempts).  platform_name is None when no platform
+    can render; attempts is a list of (candidate, ok, detail) for --doctor.
     """
     if not GUI_AVAILABLE:
-        return None, [("-", "PySide6 is not importable in this interpreter")]
+        return None, [("-", False, "PySide6 is not importable in this interpreter")]
 
-    candidates = _qt_platform_candidates()
+    candidates = _qt_platform_candidates(forced)
     if not candidates:
-        return None, [("-", "neither DISPLAY nor WAYLAND_DISPLAY is set")]
+        return None, [("-", False, "neither DISPLAY nor WAYLAND_DISPLAY is set")]
 
-    failures = []
+    attempts = []
     for candidate in candidates:
-        env = os.environ.copy()
-        env["QT_QPA_PLATFORM"] = candidate
-        try:
-            result = subprocess.run(
-                [sys.executable, "-c", _QT_PROBE_SNIPPET],
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=QT_PROBE_TIMEOUT,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            failures.append((candidate, "probe timed out"))
-            continue
-        except Exception as exc:
-            failures.append((candidate, f"probe could not run: {exc}"))
-            continue
+        ok, detail = _probe_one_platform(candidate)
+        attempts.append((candidate, ok, detail))
+        if ok:
+            return candidate, attempts
 
-        if result.returncode == 0 and "QT_PROBE_OK" in (result.stdout or ""):
-            return candidate, failures
-
-        stderr_lines = [
-            line.strip()
-            for line in (result.stderr or "").splitlines()
-            if line.strip() and "xcb-cursor0" not in line
-        ]
-        detail = stderr_lines[0] if stderr_lines else f"exit code {result.returncode}"
-        failures.append((candidate, detail))
-
-    return None, failures
+    return None, attempts
 
 
 # ---------------------------------------------------------------------------
@@ -1416,10 +1525,46 @@ class TaskReporterApp(QMainWindow):
             QMessageBox.critical(self, "Error", f"An unexpected error occurred:\n{e}")
 
     def _center_window(self):
-        screen = QApplication.primaryScreen().availableGeometry()
+        """Fit the window to the screen it is on, then centre it.
+
+        Two ways this used to strand the window off-screen: a minimum size
+        larger than the display, and centring on a multi-monitor virtual desktop
+        whose primary screen is not where the window actually is.
+        """
+        # Prefer the screen the pointer is on: on this machine the *primary*
+        # screen is reported at offset (1920, 724), so centring on it blindly
+        # puts the window on the other monitor - invisible if that monitor is
+        # off or is a stale entry left behind by a display change.
+        screen = None
+        try:
+            screen = QApplication.screenAt(QCursor.pos())
+        except Exception:
+            screen = None
+        if screen is None:
+            handle = self.windowHandle()
+            screen = (handle.screen() if handle is not None else None) or (
+                QApplication.primaryScreen()
+            )
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+
+        # Never demand more room than the screen has.
+        max_w = max(480, available.width() - 80)
+        max_h = max(360, available.height() - 80)
+        self.setMinimumSize(min(920, max_w), min(680, max_h))
+        self.resize(min(self.width(), max_w), min(self.height(), max_h))
+
+        if QApplication.platformName().startswith("wayland"):
+            # Wayland clients cannot place themselves; the compositor decides.
+            return
+
         frame = self.frameGeometry()
-        frame.moveCenter(screen.center())
-        self.move(frame.topLeft())
+        frame.moveCenter(available.center())
+        # Clamp so the title bar can never end up outside the visible area.
+        x = max(available.left(), min(frame.left(), available.right() - frame.width()))
+        y = max(available.top(), min(frame.top(), available.bottom() - frame.height()))
+        self.move(x, y)
 
     def _check_or_create_excel(self):
         if os.path.exists(EXCEL_FILE_PATH):
@@ -1626,10 +1771,10 @@ def _install_signal_handlers(session: ReporterSession):
             pass
 
 
-def _describe_gui_failure(failures: list) -> str:
-    if not failures:
+def _describe_gui_failure(attempts: list) -> str:
+    if not attempts:
         return "no display was detected"
-    return "; ".join(f"{name}: {reason}" for name, reason in failures)
+    return "; ".join(f"{name}: {detail}" for name, _ok, detail in attempts)
 
 
 def run_gui(session: ReporterSession, start_cli: bool) -> int:
@@ -1700,7 +1845,7 @@ def _print_session_summary(session: ReporterSession):
         print(f"{queued} report(s) still queued for the workbook.")
 
 
-def run_doctor() -> int:
+def run_doctor(forced_platform: str = None) -> int:
     print("Task Reporter - environment check")
     print("-" * 68)
     print(f"  interpreter        : {sys.executable}")
@@ -1714,18 +1859,26 @@ def run_doctor() -> int:
     print(f"  stdin is a tty     : {bool(sys.stdin) and sys.stdin.isatty()}")
     print("-" * 68)
 
-    platform_name, failures = probe_qt_platform()
-    for name, reason in failures:
-        print(f"  [x] platform '{name}' -> {reason}")
+    platform_name, attempts = probe_qt_platform(forced_platform)
+    for name, ok, detail in attempts:
+        print(f"  [{'ok' if ok else 'x '}] platform '{name}' -> {detail}")
     if platform_name:
-        print(f"  [ok] GUI will start using the '{platform_name}' platform plugin.")
+        print()
+        print(f"  [ok] The window renders under '{platform_name}'.")
         print("       Both the window and the terminal console will be available.")
         return 0
 
-    print("  [x] No Qt platform plugin could start - the GUI is unavailable.")
+    print()
+    print("  [x] No Qt platform could put a window on screen.")
     print("      The terminal console will be used instead; nothing is lost.")
-    print("      On WSL this usually means WSLg is not running. Try:")
-    print("        wsl.exe --shutdown      (from Windows, then reopen)")
+    print()
+    print("      A window that is created but never painted is almost always a")
+    print("      degraded WSLg session. From Windows, this usually clears it:")
+    print("        wsl.exe --shutdown        (then reopen)")
+    print()
+    print("      To force a specific platform, either flag or env var works:")
+    print("        ./task-report --platform xcb")
+    print("        TASK_REPORT_QT_PLATFORM=xcb ./task-report")
     return 0
 
 
@@ -1757,6 +1910,14 @@ def main(argv: list) -> int:
         help="Print recent reports and exit",
     )
     parser.add_argument(
+        "--platform",
+        metavar="NAME",
+        help=(
+            "Force a Qt platform plugin (e.g. wayland, xcb, offscreen) instead "
+            "of auto-detecting. Also settable as TASK_REPORT_QT_PLATFORM."
+        ),
+    )
+    parser.add_argument(
         "--doctor",
         action="store_true",
         help="Explain whether the GUI can start, and why not if it cannot",
@@ -1770,7 +1931,7 @@ def main(argv: list) -> int:
     flush_pending_reports()
 
     if args.doctor:
-        return run_doctor()
+        return run_doctor(args.platform)
 
     if args.list_reports:
         _print_recent_reports(limit=50)
@@ -1793,17 +1954,24 @@ def main(argv: list) -> int:
 
     script_path = os.path.abspath(__file__)
     platform_name = None
-    failures = []
+    attempts = []
 
     if not args.cli:
         ensure_movs_python(script_path, argv)
         relaunch_with_gui_if_possible(script_path, argv)
-        platform_name, failures = probe_qt_platform()
+        platform_name, attempts = probe_qt_platform(args.platform)
 
     if platform_name:
-        # A GUI-capable platform plugin was verified in a subprocess, so
-        # QApplication() below will not abort the process.
+        # The platform was verified in a subprocess to both load AND paint a
+        # window, so QApplication() below will neither abort nor hang on an
+        # invisible surface.
         os.environ["QT_QPA_PLATFORM"] = platform_name
+        if platform_name not in VISUAL_QT_PLATFORMS:
+            print(
+                f"Warning: '{platform_name}' does not draw on a real screen. "
+                "The window will be invisible;"
+            )
+            print("         use --cli, or --platform wayland/xcb, to get out of it.")
         start_cli = not args.gui and stdin_is_tty
         if not args.gui and not stdin_is_tty:
             print("No interactive terminal attached - running the window only.")
@@ -1822,7 +1990,7 @@ def main(argv: list) -> int:
 
     if not args.cli:
         print("The GUI could not start, so the terminal console is taking over.")
-        print(f"  Reason: {_describe_gui_failure(failures)}")
+        print(f"  Reason: {_describe_gui_failure(attempts)}")
         print("  Run with --doctor for the full check.")
 
     if not stdin_is_tty:
