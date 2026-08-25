@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Launch the Task Reporter from anywhere on the Linux side.
+#
+#   ./task-report            window + terminal console together
+#   ./task-report --cli      terminal console only
+#   ./task-report --gui      window only
+#   ./task-report -m "text"  file one report and exit
+#   ./task-report --doctor   explain why the window will or will not open
+#
+# Override the interpreter with TASK_REPORT_PYTHON=/path/to/python if needed.
+set -u
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+PY="${TASK_REPORT_PYTHON:-}"
+if [ -z "$PY" ] || [ ! -x "$PY" ]; then
+    PY=""
+    for candidate in \
+        /root/miniconda3/envs/movs/bin/python \
+        "$HOME/miniconda3/envs/movs/bin/python" \
+        "$(command -v python3 2>/dev/null)" \
+        "$(command -v python 2>/dev/null)"
+    do
+        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+            PY="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "$PY" ]; then
+    echo "Task Reporter: no usable Python interpreter found." >&2
+    echo "Set TASK_REPORT_PYTHON to the interpreter you want to use." >&2
+    exit 1
+fi
+
+exec "$PY" "$DIR/task-report-maker.py" "$@"

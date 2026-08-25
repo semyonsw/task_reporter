@@ -1,3 +1,16 @@
+"""Task Reporter - files task reports into task_reports.xlsx.
+
+Two surfaces are available and, whenever a desktop session exists, both run at
+the same time from a single process:
+
+  * the PySide6 window  - type the report, press Ctrl+Enter
+  * the terminal console - type the report at the `report>` prompt, press Enter
+
+Closing either surface ends the whole session, so the GUI window and the
+terminal window always disappear together.  When no usable display exists the
+terminal console simply becomes the only surface instead of the program dying.
+"""
+
 try:
     from PySide6.QtWidgets import (
         QApplication,
@@ -32,21 +45,36 @@ except ModuleNotFoundError:
 
 import openpyxl
 from openpyxl import Workbook
-import os
-import sys
 import argparse
+import json
+import os
 import shutil
+import signal
 import subprocess
+import sys
+import threading
+from collections import deque
 from datetime import datetime
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXCEL_FILE_NAME = "task_reports.xlsx"
-EXCEL_FILE_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), EXCEL_FILE_NAME
-)
+EXCEL_FILE_PATH = os.path.join(BASE_DIR, EXCEL_FILE_NAME)
+# Reports land here when the workbook cannot be written (usually because it is
+# open in Excel).  They are merged back in automatically on the next save.
+PENDING_FILE_PATH = os.path.join(BASE_DIR, ".task_reports_pending.jsonl")
+
 MAX_REPORT_LENGTH = 2000
+TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S"
+
 RELAUNCH_ENV_FLAG = "TASK_REPORT_TK_RELAUNCH"
 MOVS_PYTHON = "/root/miniconda3/envs/movs/bin/python"
 MOVS_RELAUNCH_FLAG = "TASK_REPORT_MOVS_RELAUNCH"
+QT_PROBE_TIMEOUT = 30
+
+
+# ---------------------------------------------------------------------------
+# Interpreter bootstrapping
+# ---------------------------------------------------------------------------
 
 
 def _python_has_pyside6(python_executable: str) -> bool:
@@ -77,9 +105,8 @@ def relaunch_with_gui_if_possible(script_path: str, args: list) -> bool:
         if resolved:
             candidates.append(resolved)
 
-    known_conda_python = "/root/miniconda3/envs/movs/bin/python"
-    if os.path.exists(known_conda_python):
-        candidates.append(known_conda_python)
+    if os.path.exists(MOVS_PYTHON):
+        candidates.append(MOVS_PYTHON)
 
     seen = set()
     unique_candidates = []
@@ -99,6 +126,12 @@ def relaunch_with_gui_if_possible(script_path: str, args: list) -> bool:
 
 
 def ensure_movs_python(script_path: str, args: list) -> None:
+    """Hop into the `movs` interpreter, but only when that is an upgrade.
+
+    Re-execing into an interpreter that lacks PySide6 used to be a silent way
+    to lose the GUI, so the hop is skipped when the current interpreter can
+    already draw the window or the target cannot.
+    """
     if os.environ.get(MOVS_RELAUNCH_FLAG) == "1":
         return
 
@@ -108,7 +141,10 @@ def ensure_movs_python(script_path: str, args: list) -> None:
     if current_python == target_python:
         return
 
-    if not os.path.exists(target_python):
+    if GUI_AVAILABLE:
+        return
+
+    if not os.path.exists(target_python) or not _python_has_pyside6(target_python):
         return
 
     env = os.environ.copy()
@@ -116,100 +152,361 @@ def ensure_movs_python(script_path: str, args: list) -> None:
     os.execvpe(target_python, [target_python, script_path, *args], env)
 
 
-def append_report_to_excel(report_text: str):
-    if not report_text or not report_text.strip():
-        raise ValueError("The report cannot be empty.")
+# ---------------------------------------------------------------------------
+# Qt platform probing
+# ---------------------------------------------------------------------------
 
-    if not os.path.exists(EXCEL_FILE_PATH):
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Reports"
-        ws.append(["Date-Time", "Task Report"])
-        ws.column_dimensions["A"].width = 25
-        ws.column_dimensions["B"].width = 100
-        wb.save(EXCEL_FILE_PATH)
-
-    current_timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
-    ws = wb.active
-    ws.append([current_timestamp, report_text.strip()])
-    wb.save(EXCEL_FILE_PATH)
+_QT_PROBE_SNIPPET = (
+    "import sys\n"
+    "from PySide6.QtWidgets import QApplication\n"
+    "QApplication([])\n"
+    "sys.stdout.write('QT_PROBE_OK')\n"
+)
 
 
-def load_reports_from_excel() -> list:
-    if not os.path.exists(EXCEL_FILE_PATH):
-        return []
-    try:
-        wb = openpyxl.load_workbook(EXCEL_FILE_PATH, read_only=True)
-        ws = wb.active
-        rows = []
-        first = True
-        for row in ws.iter_rows(values_only=True):
-            if first:
-                first = False
-                continue
-            dt_val = str(row[0]) if row[0] is not None else ""
-            rpt_val = str(row[1]) if len(row) > 1 and row[1] is not None else ""
-            rows.append((dt_val, rpt_val))
-        wb.close()
-        return rows
-    except Exception:
-        return []
+def _qt_platform_candidates() -> list:
+    candidates = []
+
+    forced = (os.environ.get("QT_QPA_PLATFORM") or "").strip()
+    if forced:
+        candidates.append(forced)
+    if (os.environ.get("WAYLAND_DISPLAY") or "").strip():
+        candidates.append("wayland")
+    if (os.environ.get("DISPLAY") or "").strip():
+        candidates.append("xcb")
+
+    seen = set()
+    ordered = []
+    for candidate in candidates:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+    return ordered
 
 
-def compact_excel():
-    if not os.path.exists(EXCEL_FILE_PATH):
-        return
-    wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
-    ws = wb.active
-    kept = []
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row is None:
-            continue
-        vals = [c for c in row if c is not None and str(c).strip()]
-        if vals:
-            kept.append(
-                (
-                    str(row[0]) if row[0] is not None else "",
-                    str(row[1]) if len(row) > 1 and row[1] is not None else "",
-                )
+def probe_qt_platform():
+    """Find a Qt platform plugin that actually starts.
+
+    This is the fix for "sometimes the UI doesn't open".  When no platform
+    plugin can be initialised Qt calls qFatal(), which aborts the *entire
+    process* with SIGABRT - not a Python exception, so a `try/except` around
+    QApplication() never gets to run its fallback.  Each candidate is therefore
+    tried inside a throwaway subprocess, where an abort costs us nothing.
+
+    Returns (platform_name, failures).  platform_name is None when the GUI
+    cannot start at all; failures lists (candidate, reason) pairs for `--doctor`.
+    """
+    if not GUI_AVAILABLE:
+        return None, [("-", "PySide6 is not importable in this interpreter")]
+
+    candidates = _qt_platform_candidates()
+    if not candidates:
+        return None, [("-", "neither DISPLAY nor WAYLAND_DISPLAY is set")]
+
+    failures = []
+    for candidate in candidates:
+        env = os.environ.copy()
+        env["QT_QPA_PLATFORM"] = candidate
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", _QT_PROBE_SNIPPET],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=QT_PROBE_TIMEOUT,
+                check=False,
             )
-    for r in range(ws.max_row, 1, -1):
-        ws.delete_rows(r)
-    for dt, rpt in kept:
-        ws.append([dt, rpt])
+        except subprocess.TimeoutExpired:
+            failures.append((candidate, "probe timed out"))
+            continue
+        except Exception as exc:
+            failures.append((candidate, f"probe could not run: {exc}"))
+            continue
+
+        if result.returncode == 0 and "QT_PROBE_OK" in (result.stdout or ""):
+            return candidate, failures
+
+        stderr_lines = [
+            line.strip()
+            for line in (result.stderr or "").splitlines()
+            if line.strip() and "xcb-cursor0" not in line
+        ]
+        detail = stderr_lines[0] if stderr_lines else f"exit code {result.returncode}"
+        failures.append((candidate, detail))
+
+    return None, failures
+
+
+# ---------------------------------------------------------------------------
+# Workbook access (shared by both surfaces, hence the lock)
+# ---------------------------------------------------------------------------
+
+_EXCEL_LOCK = threading.RLock()
+
+
+class ReportQueuedError(Exception):
+    """The workbook was locked, so the report went to the pending queue."""
+
+    def __init__(self, timestamp: str, original: Exception):
+        super().__init__(str(original))
+        self.timestamp = timestamp
+        self.original = original
+
+
+def _create_workbook():
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Reports"
+    ws.append(["Date-Time", "Task Report"])
     ws.column_dimensions["A"].width = 25
     ws.column_dimensions["B"].width = 100
     wb.save(EXCEL_FILE_PATH)
 
 
-def delete_report_from_excel(row_index: int):
+def _ensure_workbook():
     if not os.path.exists(EXCEL_FILE_PATH):
-        return
-    wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
-    ws = wb.active
-    excel_row = row_index + 2
-    if excel_row > ws.max_row:
-        wb.close()
-        return
-    ws.delete_rows(excel_row)
-    wb.save(EXCEL_FILE_PATH)
-    compact_excel()
+        _create_workbook()
+
+
+def _queue_pending(timestamp: str, text: str):
+    with open(PENDING_FILE_PATH, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"timestamp": timestamp, "report": text}) + "\n")
+        fh.flush()
+
+
+def _read_pending() -> list:
+    if not os.path.exists(PENDING_FILE_PATH):
+        return []
+    entries = []
+    try:
+        with open(PENDING_FILE_PATH, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except ValueError:
+                    continue
+                report = str(data.get("report") or "").strip()
+                if report:
+                    entries.append((str(data.get("timestamp") or "").strip(), report))
+    except OSError:
+        return []
+    return entries
+
+
+def _drop_pending():
+    try:
+        os.remove(PENDING_FILE_PATH)
+    except OSError:
+        pass
+
+
+def pending_report_count() -> int:
+    with _EXCEL_LOCK:
+        return len(_read_pending())
+
+
+def flush_pending_reports() -> int:
+    """Merge queued reports into the workbook.  Returns how many landed."""
+    with _EXCEL_LOCK:
+        entries = _read_pending()
+        if not entries:
+            return 0
+        try:
+            _ensure_workbook()
+            wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
+            ws = wb.active
+            for timestamp, report in entries:
+                ws.append([timestamp, report])
+            wb.save(EXCEL_FILE_PATH)
+        except Exception:
+            return 0
+        _drop_pending()
+        return len(entries)
+
+
+def append_report_to_excel(report_text: str) -> str:
+    """Append a report and return the timestamp that was written.
+
+    Raises ReportQueuedError when the workbook cannot be written - the report
+    is safely queued in that case rather than lost.
+    """
+    if not report_text or not report_text.strip():
+        raise ValueError("The report cannot be empty.")
+
+    text = report_text.strip()
+    timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
+
+    with _EXCEL_LOCK:
+        pending = _read_pending()
+        try:
+            _ensure_workbook()
+            wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
+            ws = wb.active
+            for queued_timestamp, queued_report in pending:
+                ws.append([queued_timestamp, queued_report])
+            ws.append([timestamp, text])
+            wb.save(EXCEL_FILE_PATH)
+        except (PermissionError, OSError) as exc:
+            _queue_pending(timestamp, text)
+            raise ReportQueuedError(timestamp, exc) from exc
+
+        if pending:
+            _drop_pending()
+
+    return timestamp
+
+
+def _format_cell_timestamp(value) -> str:
+    """Render a Date-Time cell.
+
+    Rows typed directly into Excel come back as real datetime objects, while
+    rows written by this app are strings; normalise both to one format.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime(TIMESTAMP_FORMAT)
+    return str(value)
+
+
+def load_reports_from_excel() -> list:
+    with _EXCEL_LOCK:
+        rows = []
+        if os.path.exists(EXCEL_FILE_PATH):
+            try:
+                wb = openpyxl.load_workbook(EXCEL_FILE_PATH, read_only=True)
+                ws = wb.active
+                first = True
+                for row in ws.iter_rows(values_only=True):
+                    if first:
+                        first = False
+                        continue
+                    dt_val = _format_cell_timestamp(row[0])
+                    rpt_val = (
+                        str(row[1]) if len(row) > 1 and row[1] is not None else ""
+                    )
+                    rows.append((dt_val, rpt_val))
+                wb.close()
+            except Exception:
+                rows = []
+        # Queued-but-not-yet-merged reports are real reports; show them too.
+        rows.extend(_read_pending())
+        return rows
+
+
+def compact_excel():
+    with _EXCEL_LOCK:
+        if not os.path.exists(EXCEL_FILE_PATH):
+            return
+        wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
+        ws = wb.active
+        kept = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row is None:
+                continue
+            vals = [c for c in row if c is not None and str(c).strip()]
+            if vals:
+                kept.append(
+                    (
+                        _format_cell_timestamp(row[0]),
+                        str(row[1]) if len(row) > 1 and row[1] is not None else "",
+                    )
+                )
+        for r in range(ws.max_row, 1, -1):
+            ws.delete_rows(r)
+        for dt, rpt in kept:
+            ws.append([dt, rpt])
+        ws.column_dimensions["A"].width = 25
+        ws.column_dimensions["B"].width = 100
+        wb.save(EXCEL_FILE_PATH)
+
+
+def delete_report_from_excel(row_index: int):
+    with _EXCEL_LOCK:
+        flush_pending_reports()
+        if not os.path.exists(EXCEL_FILE_PATH):
+            return
+        wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
+        ws = wb.active
+        excel_row = row_index + 2
+        if excel_row > ws.max_row:
+            wb.close()
+            return
+        ws.delete_rows(excel_row)
+        wb.save(EXCEL_FILE_PATH)
+        compact_excel()
 
 
 def update_report_in_excel(row_index: int, new_datetime: str, new_text: str):
-    if not os.path.exists(EXCEL_FILE_PATH):
-        return
-    wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
-    ws = wb.active
-    excel_row = row_index + 2
-    if excel_row > ws.max_row:
-        wb.close()
-        return
-    ws.cell(row=excel_row, column=1, value=new_datetime)
-    ws.cell(row=excel_row, column=2, value=new_text.strip())
-    wb.save(EXCEL_FILE_PATH)
-    compact_excel()
+    with _EXCEL_LOCK:
+        flush_pending_reports()
+        if not os.path.exists(EXCEL_FILE_PATH):
+            return
+        wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
+        ws = wb.active
+        excel_row = row_index + 2
+        if excel_row > ws.max_row:
+            wb.close()
+            return
+        ws.cell(row=excel_row, column=1, value=new_datetime)
+        ws.cell(row=excel_row, column=2, value=new_text.strip())
+        wb.save(EXCEL_FILE_PATH)
+        compact_excel()
+
+
+# ---------------------------------------------------------------------------
+# Session coordination between the two surfaces
+# ---------------------------------------------------------------------------
+
+
+class ReporterSession:
+    """Shared state linking the GUI window and the terminal console.
+
+    Either surface can call request_shutdown(); the other notices and stops,
+    which is what makes "close the window -> the terminal closes too" (and the
+    reverse) work.
+    """
+
+    def __init__(self):
+        self._shutdown = threading.Event()
+        self._lock = threading.Lock()
+        self._reason = None
+        self._events = deque()
+        self.saved_count = 0
+        self.cli_active = False
+
+    @property
+    def reason(self):
+        with self._lock:
+            return self._reason
+
+    def is_shutting_down(self) -> bool:
+        return self._shutdown.is_set()
+
+    def wait_for_shutdown(self, timeout=None) -> bool:
+        return self._shutdown.wait(timeout)
+
+    def request_shutdown(self, reason: str):
+        with self._lock:
+            if self._reason is None:
+                self._reason = reason
+        self._shutdown.set()
+
+    def record_save(self, origin: str, timestamp: str, queued: bool = False):
+        with self._lock:
+            self.saved_count += 1
+            self._events.append(
+                {"origin": origin, "timestamp": timestamp, "queued": queued}
+            )
+
+    def drain_events(self) -> list:
+        with self._lock:
+            events = list(self._events)
+            self._events.clear()
+        return events
 
 
 DARK_QSS = """
@@ -777,8 +1074,9 @@ class ReportHistoryDialog(QDialog):
 
 
 class TaskReporterApp(QMainWindow):
-    def __init__(self):
+    def __init__(self, session: "ReporterSession" = None):
         super().__init__()
+        self._session = session
         self.setWindowTitle("Task Reporter")
         self.resize(1000, 720)
         self.setMinimumSize(920, 680)
@@ -791,6 +1089,12 @@ class TaskReporterApp(QMainWindow):
         self._clock_timer.start(1000)
         self._tick_clock()
 
+        # Picks up reports filed from the terminal console so both surfaces
+        # stay in agreement about what has been saved.
+        self._sync_timer = QTimer(self)
+        self._sync_timer.timeout.connect(self._drain_session_events)
+        self._sync_timer.start(400)
+
         self._bind_shortcuts()
 
         self.editor.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -799,6 +1103,27 @@ class TaskReporterApp(QMainWindow):
         self._update_counter()
         self._center_window()
         self.editor.setFocus()
+
+    def _drain_session_events(self):
+        if self._session is None:
+            return
+        for event in self._session.drain_events():
+            if event.get("origin") == "window":
+                continue
+            suffix = " (queued - workbook is locked)" if event.get("queued") else ""
+            self.status_label.setText(
+                f"Filed from the terminal at {event.get('timestamp', '')}{suffix}"
+            )
+            self.status_label.setStyleSheet(
+                "font-size: 13px; font-weight: 600;"
+                " color: #22C55E; background: transparent;"
+            )
+
+    def closeEvent(self, event):
+        # Closing the window ends the whole session, terminal console included.
+        if self._session is not None:
+            self._session.request_shutdown("window closed")
+        event.accept()
 
     def _build_ui(self):
         root = QWidget()
@@ -1053,23 +1378,37 @@ class TaskReporterApp(QMainWindow):
             return
 
         try:
-            append_report_to_excel(report_text)
+            timestamp = append_report_to_excel(report_text)
             self.editor.clear()
             self._update_counter()
-            self.status_label.setText("Saved successfully \u2713")
+            if self._session is not None:
+                self._session.record_save("window", timestamp)
+            self.status_label.setText(f"Saved at {timestamp} \u2713")
             self.status_label.setStyleSheet(
                 "font-size: 13px; font-weight: 600;"
                 " color: #22C55E; background: transparent;"
             )
             QMessageBox.information(self, "Success", "Task saved successfully!")
 
-        except PermissionError:
-            self._set_status("Could not save: file is in use", danger=True)
-            QMessageBox.critical(
+        except ReportQueuedError as exc:
+            # Nothing is lost: the report sits in the pending queue and is
+            # merged into the workbook on the next successful save.
+            self.editor.clear()
+            self._update_counter()
+            if self._session is not None:
+                self._session.record_save("window", exc.timestamp, queued=True)
+            self.status_label.setText(f"Queued at {exc.timestamp} \u2713")
+            self.status_label.setStyleSheet(
+                "font-size: 13px; font-weight: 600;"
+                " color: #F59E0B; background: transparent;"
+            )
+            QMessageBox.information(
                 self,
-                "Permission Error",
-                f"Could not save to:\n{EXCEL_FILE_PATH}\n\n"
-                "Is the Excel file currently open? Please close it and try again.",
+                "Saved to the pending queue",
+                f"The workbook could not be written:\n{EXCEL_FILE_PATH}\n\n"
+                "It is probably open in Excel. Your report was kept in\n"
+                f"{PENDING_FILE_PATH}\n\n"
+                "and will be merged in automatically once the file is free.",
             )
 
         except Exception as e:
@@ -1107,94 +1446,398 @@ class TaskReporterApp(QMainWindow):
         dlg.exec()
 
 
-def run_headless_mode(reason: str = None):
-    display_available = bool(
-        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
-    )
-    if reason == "forced_cli":
-        print("Running in terminal mode.")
-    elif display_available:
-        print(
-            "GUI mode unavailable in the current Python environment. "
-            "Running in terminal mode."
-        )
-    else:
-        print("No GUI display detected. Running in terminal mode.")
+# ---------------------------------------------------------------------------
+# Terminal console
+# ---------------------------------------------------------------------------
 
-    print("Type your task report and press Enter.")
+CLI_PROMPT = "report> "
 
-    if not sys.stdin.isatty():
-        report_text = sys.stdin.read().strip()
+CLI_COMMANDS = [
+    (":m  /  :multi", "write a multi-line report (finish with a lone '.')"),
+    (":l  /  :list", "show the 10 most recent reports"),
+    (":p  /  :path", "print the workbook path"),
+    (":h  /  :help", "show this help"),
+    (":q  /  :quit", "close the session (Ctrl+C and Ctrl+D do the same)"),
+]
+
+
+def _print_cli_help():
+    print("  Type your report and press Enter to file it.")
+    print("  Use \\n inside the line for a manual line break.")
+    for keys, desc in CLI_COMMANDS:
+        print(f"    {keys:<16} {desc}")
+
+
+def _print_cli_banner(dual: bool):
+    print()
+    print("=" * 68)
+    print("  TASK REPORTER - terminal console")
+    print("=" * 68)
+    if dual:
+        print("  The window and this console are both live.")
+        print("  File the report in whichever one you like.")
+        print("  Closing either one closes the other.")
     else:
+        print("  This console is the only surface for this session.")
+    print(f"  Workbook: {EXCEL_FILE_PATH}")
+    queued = pending_report_count()
+    if queued:
+        print(f"  {queued} report(s) waiting to be merged into the workbook.")
+    print("-" * 68)
+    _print_cli_help()
+    print("-" * 68)
+
+
+def _print_recent_reports(limit: int = 10):
+    rows = load_reports_from_excel()
+    if not rows:
+        print("  No reports yet.")
+        return
+    recent = rows[-limit:]
+    start = len(rows) - len(recent) + 1
+    print(f"  Showing {len(recent)} of {len(rows)} report(s):")
+    for offset, (timestamp, report) in enumerate(recent):
+        single_line = " ".join(report.split())
+        if len(single_line) > 96:
+            single_line = single_line[:93] + "..."
+        print(f"    {start + offset:>4}. [{timestamp}] {single_line}")
+
+
+def save_report_text(text: str, origin: str, session=None) -> bool:
+    """Save one report from either surface.  Returns True when it was kept."""
+    try:
+        timestamp = append_report_to_excel(text)
+    except ValueError as exc:
+        print(f"  [!] {exc}")
+        return False
+    except ReportQueuedError as exc:
+        if session is not None:
+            session.record_save(origin, exc.timestamp, queued=True)
+        print(f"  [~] Saved at {exc.timestamp}, but the workbook is locked.")
+        print(f"      Queued in {os.path.basename(PENDING_FILE_PATH)} and it will")
+        print("      be merged automatically once Excel releases the file.")
+        return True
+    except Exception as exc:
+        print(f"  [!] Could not save: {exc}")
+        return False
+
+    if session is not None:
+        session.record_save(origin, timestamp)
+    print(f"  [ok] Saved at {timestamp} -> {EXCEL_FILE_NAME}")
+    return True
+
+
+def _read_multiline_report() -> str:
+    print("  Multi-line mode. Finish with a single '.' on its own line.")
+    lines = []
+    while True:
         try:
-            report_text = input("Task report: ").strip()
-        except EOFError:
-            report_text = ""
+            line = input("  | ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if line.strip() == ".":
+            break
+        lines.append(line)
+    return "\n".join(lines).strip()
 
-    if not report_text:
+
+def cli_console_loop(session: ReporterSession, dual: bool):
+    """Read reports from the terminal until the session ends."""
+    session.cli_active = True
+    _print_cli_banner(dual)
+
+    while not session.is_shutting_down():
+        try:
+            line = input(CLI_PROMPT)
+        except EOFError:
+            print()
+            session.request_shutdown("terminal closed")
+            break
+        except KeyboardInterrupt:
+            print()
+            session.request_shutdown("terminal interrupted (Ctrl+C)")
+            break
+        except Exception:
+            session.request_shutdown("terminal closed")
+            break
+
+        command = line.strip()
+        if not command:
+            continue
+
+        lowered = command.lower()
+        if lowered in (":q", ":quit", ":exit"):
+            session.request_shutdown("closed from the terminal")
+            break
+        if lowered in (":h", ":help", ":?"):
+            _print_cli_help()
+            continue
+        if lowered in (":l", ":list"):
+            _print_recent_reports()
+            continue
+        if lowered in (":p", ":path"):
+            print(f"  {EXCEL_FILE_PATH}")
+            continue
+        if lowered in (":m", ":multi"):
+            text = _read_multiline_report()
+            if text:
+                save_report_text(text, "terminal", session)
+            else:
+                print("  [!] Nothing entered - not saved.")
+            continue
+
+        report = command.replace("\\n", "\n").strip()
+        if len(report) > MAX_REPORT_LENGTH:
+            print(
+                f"  [!] Too long ({len(report)} chars). "
+                f"The limit is {MAX_REPORT_LENGTH}."
+            )
+            continue
+
+        save_report_text(report, "terminal", session)
+
+    session.cli_active = False
+
+
+# ---------------------------------------------------------------------------
+# Run modes
+# ---------------------------------------------------------------------------
+
+
+def _install_signal_handlers(session: ReporterSession):
+    """Closing the terminal window sends SIGHUP - treat it as 'end session'."""
+
+    def _handler(signum, _frame):
+        names = {
+            getattr(signal, "SIGHUP", None): "terminal window closed",
+            getattr(signal, "SIGTERM", None): "session terminated",
+            getattr(signal, "SIGINT", None): "interrupted (Ctrl+C)",
+        }
+        session.request_shutdown(names.get(signum) or f"signal {signum}")
+
+    for name in ("SIGHUP", "SIGTERM", "SIGINT"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _handler)
+        except (ValueError, OSError):
+            pass
+
+
+def _describe_gui_failure(failures: list) -> str:
+    if not failures:
+        return "no display was detected"
+    return "; ".join(f"{name}: {reason}" for name, reason in failures)
+
+
+def run_gui(session: ReporterSession, start_cli: bool) -> int:
+    qt_app = QApplication(sys.argv)
+    qt_app.setApplicationName("Task Reporter")
+    qt_app.setStyleSheet(DARK_QSS)
+    qt_app.setQuitOnLastWindowClosed(True)
+
+    window = TaskReporterApp(session=session)
+    window.show()
+
+    # Polls the shared shutdown flag so the terminal side can close the window,
+    # and gives the interpreter a slice in which to run signal handlers - Qt's
+    # exec() otherwise blocks in C and Ctrl+C never arrives.
+    watchdog = QTimer()
+    watchdog.setInterval(200)
+    watchdog.timeout.connect(
+        lambda: qt_app.quit() if session.is_shutting_down() else None
+    )
+    watchdog.start()
+
+    if start_cli:
+        thread = threading.Thread(
+            target=cli_console_loop,
+            args=(session, True),
+            name="task-report-cli",
+            daemon=True,
+        )
+        # Start once the window is actually up, so the banner is not buried
+        # under Qt's own start-up chatter.
+        QTimer.singleShot(0, thread.start)
+
+    exit_code = qt_app.exec()
+    session.request_shutdown("window closed")
+    return exit_code
+
+
+def wait_for_quiet_workbook(timeout: float = 15.0):
+    """Block until no save is in flight.
+
+    The hard exit below kills the console thread wherever it happens to be, so
+    it must not land in the middle of openpyxl rewriting the .xlsx.
+    """
+    if _EXCEL_LOCK.acquire(timeout=timeout):
+        _EXCEL_LOCK.release()
+
+
+def run_stdin_oneshot(session: ReporterSession) -> int:
+    """Non-interactive stdin: treat everything piped in as a single report."""
+    try:
+        text = sys.stdin.read().strip()
+    except Exception:
+        text = ""
+    if not text:
         print("Error: The report cannot be empty.")
         return 1
+    return 0 if save_report_text(text, "stdin", session) else 1
 
-    try:
-        append_report_to_excel(report_text)
-        print(f"Task saved successfully to: {EXCEL_FILE_PATH}")
+
+def _print_session_summary(session: ReporterSession):
+    print()
+    print(f"Task Reporter closed - {session.reason or 'session ended'}.")
+    if session.saved_count:
+        plural = "s" if session.saved_count != 1 else ""
+        print(f"{session.saved_count} report{plural} filed this session.")
+    queued = pending_report_count()
+    if queued:
+        print(f"{queued} report(s) still queued for the workbook.")
+
+
+def run_doctor() -> int:
+    print("Task Reporter - environment check")
+    print("-" * 68)
+    print(f"  interpreter        : {sys.executable}")
+    print(f"  script folder      : {BASE_DIR}")
+    print(f"  workbook           : {EXCEL_FILE_PATH}")
+    print(f"  workbook exists    : {os.path.exists(EXCEL_FILE_PATH)}")
+    print(f"  queued reports     : {pending_report_count()}")
+    print(f"  PySide6 importable : {GUI_AVAILABLE}")
+    print(f"  DISPLAY            : {os.environ.get('DISPLAY') or '(unset)'}")
+    print(f"  WAYLAND_DISPLAY    : {os.environ.get('WAYLAND_DISPLAY') or '(unset)'}")
+    print(f"  stdin is a tty     : {bool(sys.stdin) and sys.stdin.isatty()}")
+    print("-" * 68)
+
+    platform_name, failures = probe_qt_platform()
+    for name, reason in failures:
+        print(f"  [x] platform '{name}' -> {reason}")
+    if platform_name:
+        print(f"  [ok] GUI will start using the '{platform_name}' platform plugin.")
+        print("       Both the window and the terminal console will be available.")
         return 0
-    except PermissionError:
-        print(
-            f"Permission Error: Could not save to '{EXCEL_FILE_PATH}'. "
-            "Is the file open?"
-        )
-        return 1
-    except Exception as e:
-        print(f"Error: {e}")
-        return 1
+
+    print("  [x] No Qt platform plugin could start - the GUI is unavailable.")
+    print("      The terminal console will be used instead; nothing is lost.")
+    print("      On WSL this usually means WSLg is not running. Try:")
+    print("        wsl.exe --shutdown      (from Windows, then reopen)")
+    return 0
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Task reporter – GUI and CLI modes.")
-    parser.add_argument("--gui", action="store_true", help="Force GUI mode")
-    parser.add_argument("--cli", action="store_true", help="Force terminal mode")
-    args = parser.parse_args()
+def main(argv: list) -> int:
+    parser = argparse.ArgumentParser(
+        prog="task-report-maker.py",
+        description=(
+            "File task reports into task_reports.xlsx. By default the GUI "
+            "window and the terminal console run together; closing either one "
+            "ends the session."
+        ),
+    )
+    parser.add_argument(
+        "--gui", action="store_true", help="GUI only (no terminal console)"
+    )
+    parser.add_argument(
+        "--cli", action="store_true", help="Terminal console only (no window)"
+    )
+    parser.add_argument(
+        "-m",
+        "--report",
+        metavar="TEXT",
+        help="File TEXT as a report and exit immediately",
+    )
+    parser.add_argument(
+        "--list",
+        dest="list_reports",
+        action="store_true",
+        help="Print recent reports and exit",
+    )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Explain whether the GUI can start, and why not if it cannot",
+    )
+    args = parser.parse_args(argv)
 
     if args.gui and args.cli:
         print("Please choose only one mode: --gui or --cli")
-        sys.exit(1)
+        return 1
 
-    display_available = bool(
-        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
-    )
-    should_run_gui = args.gui or (not args.cli and display_available)
+    flush_pending_reports()
 
-    if should_run_gui:
-        ensure_movs_python(os.path.abspath(__file__), sys.argv[1:])
-        relaunch_with_gui_if_possible(os.path.abspath(__file__), sys.argv[1:])
+    if args.doctor:
+        return run_doctor()
 
-        if not GUI_AVAILABLE:
-            print(
-                "PySide6 is not available in the current Python environment. "
-                "Falling back to terminal mode."
-            )
-            sys.exit(run_headless_mode(reason="missing_gui"))
+    if args.list_reports:
+        _print_recent_reports(limit=50)
+        return 0
 
-        if not display_available:
-            print(
-                "GUI requested, but no display detected. Falling back to terminal mode."
-            )
-            sys.exit(run_headless_mode(reason="missing_display"))
+    session = ReporterSession()
+    _install_signal_handlers(session)
 
+    if args.report is not None:
+        return 0 if save_report_text(args.report.strip(), "argument", session) else 1
+
+    try:
+        stdin_is_tty = sys.stdin is not None and sys.stdin.isatty()
+    except (ValueError, AttributeError):
+        stdin_is_tty = False
+
+    # Piped input (echo "..." | task-report-maker.py --cli) is a one-shot save.
+    if args.cli and not stdin_is_tty:
+        return run_stdin_oneshot(session)
+
+    script_path = os.path.abspath(__file__)
+    platform_name = None
+    failures = []
+
+    if not args.cli:
+        ensure_movs_python(script_path, argv)
+        relaunch_with_gui_if_possible(script_path, argv)
+        platform_name, failures = probe_qt_platform()
+
+    if platform_name:
+        # A GUI-capable platform plugin was verified in a subprocess, so
+        # QApplication() below will not abort the process.
+        os.environ["QT_QPA_PLATFORM"] = platform_name
+        start_cli = not args.gui and stdin_is_tty
+        if not args.gui and not stdin_is_tty:
+            print("No interactive terminal attached - running the window only.")
         try:
-            qt_app = QApplication(sys.argv)
-            qt_app.setApplicationName("Task Reporter")
-            qt_app.setStyleSheet(DARK_QSS)
-
-            window = TaskReporterApp()
-            window.show()
-
-            sys.exit(qt_app.exec())
-
+            exit_code = run_gui(session, start_cli=start_cli)
         except Exception as exc:
-            print(f"GUI failed to start ({exc}). Falling back to terminal mode.")
-            sys.exit(run_headless_mode(reason="gui_failed"))
+            print(f"GUI failed to start ({exc}). Falling back to the terminal.")
+        else:
+            wait_for_quiet_workbook()
+            _print_session_summary(session)
+            sys.stdout.flush()
+            sys.stderr.flush()
+            # Hard exit: the console thread may be parked inside input(), and
+            # this is what makes closing the window close the terminal too.
+            os._exit(exit_code)
 
-    terminal_reason = "forced_cli" if args.cli else None
-    sys.exit(run_headless_mode(reason=terminal_reason))
+    if not args.cli:
+        print("The GUI could not start, so the terminal console is taking over.")
+        print(f"  Reason: {_describe_gui_failure(failures)}")
+        print("  Run with --doctor for the full check.")
+
+    if not stdin_is_tty:
+        return run_stdin_oneshot(session)
+
+    if session.cli_active:
+        # A console thread from the aborted GUI attempt already owns stdin;
+        # let it finish rather than racing it with a second reader.
+        session.wait_for_shutdown()
+    else:
+        cli_console_loop(session, dual=False)
+
+    _print_session_summary(session)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

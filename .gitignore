@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+
+# runtime queue for reports that could not reach the workbook yet
+.task_reports_pending.jsonl
