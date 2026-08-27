@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Launch the Task Reporter from anywhere on the Linux side.
 #
-#   ./task-report            window + terminal console together
+#   ./task-report            browser UI + terminal console together
 #   ./task-report --cli      terminal console only
-#   ./task-report --gui      window only
+#   ./task-report --gui      browser UI only
 #   ./task-report -m "text"  file one report and exit
-#   ./task-report --doctor   explain why the window will or will not open
+#   ./task-report --qt       the old PySide6 window instead of the browser UI
+#   ./task-report --doctor   check both UIs end to end
 #
 # Override the interpreter with TASK_REPORT_PYTHON=/path/to/python if needed.
 set -u

@@ -58,7 +58,7 @@ echo Launching Task Reporter...
 echo   Folder : %WSLDIR%
 echo   User   : root
 echo.
-echo The window and this terminal both accept reports.
+echo The browser UI and this terminal both accept reports.
 echo Closing either one closes the other.
 echo.
 
@@ -68,7 +68,7 @@ set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" (
     echo.
     echo [ERROR] Task Reporter exited with code %RC%.
-    echo For a diagnosis of why the window did not open, run:
+    echo For a diagnosis of why the UI did not open, run:
     echo   wsl -u root -- bash -lc "cd '%WSLDIR%' && bash ./task-report --doctor"
     echo.
     echo Press any key to close...

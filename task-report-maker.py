@@ -1,14 +1,18 @@
 """Task Reporter - files task reports into task_reports.xlsx.
 
-Two surfaces are available and, whenever a desktop session exists, both run at
-the same time from a single process:
+Two surfaces run at the same time from a single process:
 
-  * the PySide6 window  - type the report, press Ctrl+Enter
+  * the browser UI       - type the report, press Ctrl+Enter
   * the terminal console - type the report at the `report>` prompt, press Enter
 
-Closing either surface ends the whole session, so the GUI window and the
-terminal window always disappear together.  When no usable display exists the
-terminal console simply becomes the only surface instead of the program dying.
+Closing either surface ends the whole session, so they always disappear
+together.  If neither the browser nor a display can be reached, the terminal
+console simply becomes the only surface instead of the program dying.
+
+The UI is served over loopback and drawn by the system browser rather than by a
+desktop toolkit.  That is a deliberate reliability choice, not a stylistic one -
+see the "Browser UI" section for why the Qt window it replaced could only ever
+be intermittent under WSLg.  The Qt window is still available behind --qt.
 """
 
 try:
@@ -46,13 +50,20 @@ except ModuleNotFoundError:
 import openpyxl
 from openpyxl import Workbook
 import argparse
+import http.server
 import json
 import os
+import secrets
 import shutil
 import signal
 import subprocess
 import sys
 import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import webbrowser
 from collections import deque
 from datetime import datetime
 
@@ -1592,6 +1603,1181 @@ class TaskReporterApp(QMainWindow):
 
 
 # ---------------------------------------------------------------------------
+# Browser UI - the default surface
+# ---------------------------------------------------------------------------
+
+# Why a browser and not a desktop toolkit.
+#
+# The Qt window above renders through WSLg, and WSLg is the one part of this
+# stack that cannot be relied on.  Three failures show up as "the UI just did
+# not work this time":
+#
+#   * a plugin fails to load, and Qt answers with qFatal() - an abort, not an
+#     exception, so it cannot be caught in-process;
+#   * a plugin loads, a surface is created, and the compositor never presents
+#     it (the "taskbar button but no window" state);
+#   * a stale multi-monitor layout places the window on a screen that is off.
+#
+# None of that is fixable from inside the app.  The render probe narrows the
+# odds and cannot close them: it probes a frameless transparent tool window,
+# which does not always take the same presentation path as a real decorated
+# toplevel, and WSLg can degrade in the gap between probe and window anyway.
+# That is the intermittency - a green probe is not a promise.
+#
+# Serving the UI over loopback and opening it in the *system* browser removes
+# the whole failure class.  WSL2 forwards Windows localhost into the VM, so the
+# page is fetched by a native Windows browser, drawn by a native Windows
+# process, and placed by the Windows window manager.  No X11, no Wayland, no
+# compositor, no GPU path, and nothing outside the standard library.  On a
+# normal Linux or macOS desktop the same code opens the same page in the
+# default browser, so there is one surface to maintain rather than two.
+
+WEB_HOST = "127.0.0.1"
+# A stable port keeps the URL predictable between runs; the ephemeral fallback
+# means a busy port can never be the reason the UI does not come up.
+WEB_PREFERRED_PORTS = tuple(range(8770, 8780))
+# How long after the last page says goodbye to wait before ending the session.
+#
+# This is deliberately generous, because `pagehide` is a hint and not a verdict:
+# browsers fire it for back/forward cache, tab freezing, prerender swaps and
+# process moves as well as for a real close, and Chrome was observed firing it
+# on a visible page seconds after load.  Acting on it directly meant the UI
+# could shut itself down while the user was still looking at it - the exact
+# fault this rewrite exists to remove.  So a goodbye only starts a countdown,
+# and any ping from any page cancels it: a page that is coming back always
+# comes back well inside this window, and a page that is really gone never does.
+WEB_BYE_GRACE_SECONDS = 15.0
+# Browser-only mode has no other surface to notice a dead browser, so a page
+# that stops checking in eventually ends the session.  Background tabs are
+# throttled to roughly one timer per minute, hence the generous margin.
+WEB_IDLE_TIMEOUT_SECONDS = 300.0
+# How long to wait for the browser to actually load the page before trying the
+# alternate host spelling and then falling back to printing the URL.
+WEB_FIRST_CLIENT_TIMEOUT = 9.0
+WEB_MAX_BODY_BYTES = 256 * 1024
+
+WEB_PAGE_TEMPLATE = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Task Reporter</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: #0F1117;
+  color: #E2E8F0;
+  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; cursor: pointer; }
+.page {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 20px; height: 100%; min-height: 0;
+}
+.card { background: #161B27; border: 1px solid #1E2640; border-radius: 14px; }
+
+/* header */
+.header { display: flex; align-items: center; gap: 12px; padding: 16px 22px; flex: none; }
+.title { margin: 0 auto 0 0; font-size: 28px; font-weight: 700; color: #E8F0FE; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.clock { font-size: 13px; color: #5B6EA6; font-variant-numeric: tabular-nums; }
+.icon-btn {
+  width: 28px; height: 28px; padding: 0; border-radius: 14px;
+  background: #1E2640; color: #7B90D4; border: 1px solid #2D3860;
+  font-size: 14px; font-weight: 700; line-height: 1;
+  display: grid; place-items: center;
+}
+.icon-btn:hover { background: #2D3860; color: #A8BFFF; }
+.icon-btn:active { background: #3B4A80; }
+.separator { height: 1px; background: #1E2640; flex: none; }
+
+/* editor card */
+.content {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 20px 24px; flex: 1; min-height: 0;
+}
+.heading { margin: 0; font-size: 20px; font-weight: 700; color: #E8F0FE; }
+#editor {
+  flex: 1; min-height: 160px; resize: none; padding: 12px;
+  background: #0D1020; color: #CBD5E1;
+  border: 2px solid #1E2640; border-radius: 10px;
+  font-size: 15px; font-family: inherit; line-height: 1.55; outline: none;
+}
+#editor:focus { border-color: #3B82F6; }
+#editor::placeholder { color: #3D4F7A; }
+#editor::selection { background: #2563EB; color: #FFFFFF; }
+
+.footer { display: flex; align-items: center; gap: 12px; padding-top: 4px; flex: none; }
+.status { margin-right: auto; min-width: 160px; font-size: 13px; font-weight: 600; color: #3B82F6; }
+.status.danger  { color: #EF4444; }
+.status.success { color: #22C55E; }
+.status.warn    { color: #F59E0B; }
+.progress { flex: none; width: 200px; height: 8px; background: #1E2640; border-radius: 4px; overflow: hidden; }
+.progress-fill { width: 0; height: 100%; background: #3B82F6; border-radius: 4px; transition: width .12s linear; }
+.progress-fill.danger { background: #EF4444; }
+.counter { min-width: 80px; text-align: right; font-size: 13px; color: #5B6EA6; font-variant-numeric: tabular-nums; }
+.counter.danger { color: #EF4444; }
+.save-btn {
+  flex: none; min-width: 156px; height: 40px; border: none; border-radius: 10px;
+  background: linear-gradient(#3B82F6, #2563EB); color: #FFFFFF;
+  font-size: 14px; font-weight: 700;
+}
+.save-btn:hover  { background: linear-gradient(#60A5FA, #3B82F6); }
+.save-btn:active { background: #1D4ED8; }
+.save-btn:disabled { background: #1E2640; color: #3D4F7A; cursor: default; }
+
+/* dialogs */
+.backdrop {
+  position: fixed; inset: 0; z-index: 20; padding: 24px;
+  background: rgba(5, 7, 14, .74);
+  display: none; align-items: center; justify-content: center;
+}
+.backdrop.open { display: flex; }
+.modal {
+  display: flex; flex-direction: column; gap: 12px;
+  background: #161B27; border: 1px solid #1E2640; border-radius: 12px;
+  padding: 20px 24px 16px; max-height: 100%; width: 100%;
+}
+.modal-sm { max-width: 480px; }
+.modal-md { max-width: 600px; }
+.modal-lg { max-width: 940px; height: 100%; }
+.modal-head { display: flex; align-items: baseline; gap: 12px; flex: none; }
+.modal-head h3 { margin: 0 auto 0 0; font-size: 17px; font-weight: 700; color: #E8F0FE; }
+.modal-count { font-size: 12px; color: #5B6EA6; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; flex: none; padding-top: 4px; }
+.field-label { font-size: 12px; font-weight: 600; color: #5B6EA6; }
+
+.btn {
+  border-radius: 8px; font-size: 13px; font-weight: 600;
+  min-height: 34px; padding: 0 24px;
+  background: #1E2640; color: #7B90D4; border: 1px solid #2D3860;
+}
+.btn:hover  { background: #2D3860; color: #A8BFFF; }
+.btn:active { background: #3B4A80; }
+.btn-primary {
+  border: none; color: #FFFFFF;
+  background: linear-gradient(#3B82F6, #2563EB); font-weight: 700;
+}
+.btn-primary:hover  { background: linear-gradient(#60A5FA, #3B82F6); color: #FFFFFF; }
+.btn-primary:active { background: #1D4ED8; }
+.btn-row { min-height: 28px; padding: 0 14px; font-size: 12px; border-radius: 6px; white-space: nowrap; }
+.btn-danger { background: #2A1520; color: #F87171; border-color: #5B2030; }
+.btn-danger:hover  { background: #3D1A2A; color: #FCA5A5; }
+.btn-danger:active { background: #4A1F30; }
+
+/* history table */
+.table-wrap {
+  flex: 1; min-height: 0; overflow: auto;
+  background: #0D1020; border: 1px solid #1E2640; border-radius: 8px;
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  position: sticky; top: 0; z-index: 1; text-align: left;
+  background: #161B27; color: #7B90D4; font-weight: 700;
+  padding: 8px 12px; border-bottom: 2px solid #2D3860;
+}
+td { padding: 8px 12px; color: #CBD5E1; border-bottom: 1px solid #1E2640; vertical-align: top; }
+tbody tr:nth-child(even) { background: #131728; }
+tbody tr:hover { background: #1A2036; }
+.col-num  { width: 52px;  text-align: center; color: #5B6EA6; font-variant-numeric: tabular-nums; }
+.col-when { width: 160px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.col-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.col-act  { width: 1%; }
+.empty { padding: 28px 12px; text-align: center; color: #5B6EA6; }
+
+/* edit dialog fields */
+#editWhen, #editText {
+  width: 100%; padding: 6px 10px;
+  background: #0D1020; color: #CBD5E1;
+  border: 2px solid #1E2640; border-radius: 8px;
+  font-size: 14px; font-family: inherit; outline: none;
+}
+#editText { min-height: 200px; resize: vertical; line-height: 1.5; }
+#editWhen:focus, #editText:focus { border-color: #3B82F6; }
+.edit-error { min-height: 16px; font-size: 12px; font-weight: 600; color: #EF4444; }
+
+/* shortcuts table */
+.keys { width: 100%; border-collapse: collapse; }
+.keys tr:nth-child(odd)  { background: #0F1117; }
+.keys tr:nth-child(even) { background: #1A1F33; }
+.keys td { border: none; padding: 7px 10px; }
+.keys td:first-child { width: 1%; white-space: nowrap; }
+kbd {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  background: #1E2640; color: #A8BFFF;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px;
+}
+.hint { margin: 0; font-size: 12px; color: #5B6EA6; line-height: 1.6; }
+
+/* the session-over curtain */
+#gone {
+  position: fixed; inset: 0; z-index: 40; display: none;
+  align-items: center; justify-content: center; text-align: center;
+  background: #0F1117; color: #5B6EA6; font-size: 15px; padding: 24px;
+}
+#gone.open { display: flex; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="card header">
+    <h1 class="title">Task Reporter</h1>
+    <div class="header-right">
+      <span class="clock" id="clock"></span>
+      <button class="icon-btn" id="historyBtn" title="View previous reports" aria-label="View previous reports">&#9776;</button>
+      <button class="icon-btn" id="helpBtn" title="View keyboard shortcuts" aria-label="View keyboard shortcuts">?</button>
+    </div>
+  </header>
+
+  <div class="separator"></div>
+
+  <main class="card content">
+    <h2 class="heading">What did you accomplish?</h2>
+    <textarea id="editor" placeholder="Describe your work clearly and concisely&#8230;" autofocus></textarea>
+    <div class="footer">
+      <span class="status" id="status">Ready</span>
+      <div class="progress"><div class="progress-fill" id="progressFill"></div></div>
+      <span class="counter" id="counter"></span>
+      <button class="save-btn" id="saveBtn">Save Report</button>
+    </div>
+  </main>
+</div>
+
+<div class="backdrop" id="historyBackdrop">
+  <div class="modal modal-lg">
+    <div class="modal-head">
+      <h3>Previous Reports</h3>
+      <span class="modal-count" id="historyCount"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="col-num">#</th>
+            <th class="col-when">Date-Time</th>
+            <th class="col-text">Task Report</th>
+            <th class="col-act"></th>
+            <th class="col-act"></th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close>Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="backdrop" id="editBackdrop">
+  <div class="modal modal-md">
+    <div class="modal-head"><h3>Edit Report</h3></div>
+    <span class="field-label">Date-Time</span>
+    <input type="text" id="editWhen" autocomplete="off" spellcheck="false">
+    <span class="field-label">Task Report</span>
+    <textarea id="editText"></textarea>
+    <div class="edit-error" id="editError"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn btn-primary" id="editSave">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="backdrop" id="helpBackdrop">
+  <div class="modal modal-sm">
+    <div class="modal-head"><h3>Keyboard Shortcuts</h3></div>
+    <table class="keys">
+      <tr><td><kbd>Ctrl + Enter</kbd></td><td>Save the report</td></tr>
+      <tr><td><kbd>Ctrl + A</kbd></td><td>Select all text</td></tr>
+      <tr><td><kbd>Ctrl + Z</kbd></td><td>Undo</td></tr>
+      <tr><td><kbd>Ctrl + Y</kbd> / <kbd>Ctrl + Shift + Z</kbd></td><td>Redo</td></tr>
+      <tr><td><kbd>Ctrl + Backspace</kbd></td><td>Delete previous word</td></tr>
+      <tr><td><kbd>Ctrl + Delete</kbd></td><td>Delete next word</td></tr>
+      <tr><td><kbd>Ctrl + C</kbd> / <kbd>Ctrl + X</kbd> / <kbd>Ctrl + V</kbd></td><td>Copy / cut / paste</td></tr>
+      <tr><td><kbd>Ctrl + H</kbd></td><td>Previous reports</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close a dialog</td></tr>
+      <tr><td>Right-click</td><td>Open context menu</td></tr>
+    </table>
+    <p class="hint">
+      The terminal console is live at the same time - a report filed there
+      shows up here, and closing either one closes the other.
+    </p>
+    <div class="modal-actions">
+      <button class="btn" data-close>Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="gone"><div id="goneText"></div></div>
+
+<script>
+"use strict";
+const CFG = %%CONFIG%%;
+
+const $ = (id) => document.getElementById(id);
+const editor = $("editor");
+const statusEl = $("status");
+const counterEl = $("counter");
+const fillEl = $("progressFill");
+const saveBtn = $("saveBtn");
+
+/* ---------------------------------------------------------------- transport */
+
+// Every request carries the session token.  The server refuses anything
+// without it, which matters on WSL: the port is reachable from Windows, so
+// "bound to loopback" is not on its own a closed door.
+async function api(path, body) {
+  const res = await fetch(path + "?t=" + encodeURIComponent(CFG.token), {
+    method: body === undefined ? "GET" : "POST",
+    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+/* ------------------------------------------------------------------- status */
+
+let statusTimer = null;
+
+function setStatus(text, kind) {
+  if (statusTimer) { clearTimeout(statusTimer); statusTimer = null; }
+  statusEl.textContent = text;
+  statusEl.className = "status" + (kind ? " " + kind : "");
+}
+
+// A transient message that decays back to whatever the counter thinks.
+function flashStatus(text, kind) {
+  setStatus(text, kind);
+  statusTimer = setTimeout(() => { statusTimer = null; updateCounter(); }, 6000);
+}
+
+function updateCounter() {
+  const length = editor.value.length;
+  const over = length > CFG.maxLength;
+  counterEl.textContent = length + " / " + CFG.maxLength;
+  counterEl.className = "counter" + (over ? " danger" : "");
+  fillEl.style.width = Math.min(100, (length / CFG.maxLength) * 100) + "%";
+  fillEl.className = "progress-fill" + (over ? " danger" : "");
+  if (statusTimer) return;
+  if (over) {
+    setStatus("Report is too long  (" + (length - CFG.maxLength) + " chars over limit)", "danger");
+  } else {
+    setStatus("Ready", null);
+  }
+}
+
+/* --------------------------------------------------------------------- save */
+
+let saving = false;
+
+async function saveReport() {
+  if (saving) return;
+  const text = editor.value.trim();
+  if (!text) { flashStatus("Report cannot be empty", "danger"); editor.focus(); return; }
+  if (text.length > CFG.maxLength) {
+    flashStatus("Please keep report under " + CFG.maxLength + " characters", "danger");
+    editor.focus();
+    return;
+  }
+
+  saving = true;
+  saveBtn.disabled = true;
+  setStatus("Saving…", null);
+  try {
+    const out = await api("/api/save", { text });
+    if (out.ok) {
+      editor.value = "";
+      updateCounter();
+      flashStatus(
+        (out.queued ? "Queued at " : "Saved at ") + out.timestamp + " ✓",
+        out.queued ? "warn" : "success"
+      );
+      if (out.queued) {
+        alert(
+          "The workbook could not be written:\n" + CFG.workbook + "\n\n" +
+          "It is probably open in Excel. Your report was kept in\n" +
+          CFG.pendingFile + "\n\nand will be merged in automatically once the " +
+          "file is free."
+        );
+      }
+    } else {
+      flashStatus(out.message || "Could not save the report", "danger");
+    }
+  } catch (err) {
+    // The report is still in the box, so nothing is lost by retrying.
+    flashStatus("Lost contact with the reporter - your text is still here", "danger");
+  } finally {
+    saving = false;
+    saveBtn.disabled = false;
+    editor.focus();
+  }
+}
+
+/* ------------------------------------------------------------------ dialogs */
+
+const openStack = [];
+
+function openModal(id) {
+  const el = $(id);
+  el.classList.add("open");
+  if (!openStack.includes(id)) openStack.push(id);
+}
+
+function closeModal(id) {
+  $(id).classList.remove("open");
+  const at = openStack.indexOf(id);
+  if (at !== -1) openStack.splice(at, 1);
+  if (!openStack.length) editor.focus();
+}
+
+document.querySelectorAll("[data-close]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const backdrop = btn.closest(".backdrop");
+    if (backdrop) closeModal(backdrop.id);
+  });
+});
+
+document.querySelectorAll(".backdrop").forEach((backdrop) => {
+  backdrop.addEventListener("mousedown", (event) => {
+    if (event.target === backdrop) closeModal(backdrop.id);
+  });
+});
+
+/* ------------------------------------------------------------------ history */
+
+let historyRows = [];
+
+async function loadHistory() {
+  const body = $("historyBody");
+  try {
+    const out = await api("/api/list");
+    historyRows = out.reports || [];
+  } catch (err) {
+    body.innerHTML = "";
+    const cell = document.createElement("td");
+    cell.className = "empty";
+    cell.colSpan = 5;
+    cell.textContent = "Could not read the workbook.";
+    const row = document.createElement("tr");
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+
+  const total = historyRows.length;
+  $("historyCount").textContent = total + (total === 1 ? " report" : " reports");
+  body.innerHTML = "";
+
+  if (!total) {
+    const cell = document.createElement("td");
+    cell.className = "empty";
+    cell.colSpan = 5;
+    cell.textContent = "No reports yet.";
+    const row = document.createElement("tr");
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+
+  // Newest first, but numbered by their real position in the workbook.
+  for (let i = total - 1; i >= 0; i--) {
+    const item = historyRows[i];
+    const row = document.createElement("tr");
+
+    const num = document.createElement("td");
+    num.className = "col-num";
+    num.textContent = String(i + 1);
+    row.appendChild(num);
+
+    const when = document.createElement("td");
+    when.className = "col-when";
+    when.textContent = item.datetime;
+    row.appendChild(when);
+
+    // textContent, not innerHTML: report text is arbitrary user input.
+    const text = document.createElement("td");
+    text.className = "col-text";
+    text.textContent = item.text;
+    row.appendChild(text);
+
+    const editCell = document.createElement("td");
+    editCell.className = "col-act";
+    const editBtn = document.createElement("button");
+    editBtn.className = "btn btn-row";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", () => openEdit(item.index));
+    editCell.appendChild(editBtn);
+    row.appendChild(editCell);
+
+    const delCell = document.createElement("td");
+    delCell.className = "col-act";
+    const delBtn = document.createElement("button");
+    delBtn.className = "btn btn-row btn-danger";
+    delBtn.textContent = "Delete";
+    delBtn.addEventListener("click", () => deleteReport(item.index));
+    delCell.appendChild(delBtn);
+    row.appendChild(delCell);
+
+    body.appendChild(row);
+  }
+}
+
+async function openHistory() {
+  openModal("historyBackdrop");
+  await loadHistory();
+}
+
+async function deleteReport(index) {
+  const item = historyRows.find((row) => row.index === index);
+  if (!item) return;
+  if (!confirm("Delete report #" + (index + 1) + "?\n\nThis action cannot be undone.")) return;
+  try {
+    const out = await api("/api/delete", { index });
+    if (!out.ok) { alert(out.message || "Could not delete the report."); return; }
+    await loadHistory();
+    flashStatus("Report #" + (index + 1) + " deleted", "success");
+  } catch (err) {
+    alert("Lost contact with the reporter. Nothing was deleted.");
+  }
+}
+
+/* --------------------------------------------------------------------- edit */
+
+let editIndex = null;
+
+function openEdit(index) {
+  const item = historyRows.find((row) => row.index === index);
+  if (!item) return;
+  editIndex = index;
+  $("editWhen").value = item.datetime;
+  $("editText").value = item.text;
+  $("editError").textContent = "";
+  openModal("editBackdrop");
+  $("editText").focus();
+}
+
+async function saveEdit() {
+  if (editIndex === null) return;
+  const text = $("editText").value.trim();
+  const when = $("editWhen").value.trim();
+  const error = $("editError");
+
+  if (!text) { error.textContent = "Report text cannot be empty."; return; }
+  if (text.length > CFG.maxLength) {
+    error.textContent = "Report is too long (" + text.length + " chars). Limit is " + CFG.maxLength + ".";
+    return;
+  }
+
+  error.textContent = "";
+  try {
+    const out = await api("/api/update", { index: editIndex, datetime: when, text });
+    if (!out.ok) { error.textContent = out.message || "Could not save the changes."; return; }
+    closeModal("editBackdrop");
+    editIndex = null;
+    await loadHistory();
+    flashStatus("Report updated", "success");
+  } catch (err) {
+    error.textContent = "Lost contact with the reporter. Nothing was changed.";
+  }
+}
+
+/* --------------------------------------------------------- session heartbeat */
+
+// The page tells the server it is alive, and says goodbye on the way out, so
+// that closing the tab ends the session the way closing a window used to.
+// Missed pings alone never end it: browsers throttle timers in background
+// tabs, and a false "the browser is gone" would take the terminal with it.
+let ended = false;
+
+function endSession(reason) {
+  if (ended) return;
+  ended = true;
+  saveBtn.disabled = true;
+  editor.readOnly = true;
+  $("goneText").textContent =
+    "Task Reporter session ended" + (reason ? " - " + reason : "") + ".\n" +
+    "You can close this tab.";
+  $("gone").classList.add("open");
+}
+
+async function ping() {
+  if (ended) return;
+  try {
+    const out = await api("/api/ping", { client: CFG.clientId });
+    if (out.shuttingDown) { endSession(out.reason); return; }
+    for (const event of out.events || []) {
+      flashStatus(
+        "Filed from the terminal at " + event.timestamp +
+          (event.queued ? " (queued - workbook is locked)" : ""),
+        event.queued ? "warn" : "success"
+      );
+    }
+  } catch (err) {
+    // A single miss means nothing - the server may just be busy saving.
+  }
+}
+
+window.addEventListener("pagehide", (event) => {
+  // persisted means the page is going into the back/forward cache and will be
+  // reused - it has not been closed, so it must not say goodbye.
+  if (ended || event.persisted) return;
+  const url = "/api/bye?t=" + encodeURIComponent(CFG.token) +
+              "&client=" + encodeURIComponent(CFG.clientId);
+  // sendBeacon survives teardown; fetch(keepalive) is the fallback.
+  if (!(navigator.sendBeacon && navigator.sendBeacon(url))) {
+    fetch(url, { method: "POST", keepalive: true }).catch(() => {});
+  }
+});
+
+// Restored from the back/forward cache, unfrozen, or brought back to the
+// foreground: check in at once so any goodbye already in flight is cancelled
+// before its countdown can run out.
+window.addEventListener("pageshow", () => { ping(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") ping();
+});
+
+/* ------------------------------------------------------------------ wire-up */
+
+saveBtn.addEventListener("click", saveReport);
+editor.addEventListener("input", updateCounter);
+$("historyBtn").addEventListener("click", openHistory);
+$("helpBtn").addEventListener("click", () => openModal("helpBackdrop"));
+$("editSave").addEventListener("click", saveEdit);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && openStack.length) {
+    event.preventDefault();
+    closeModal(openStack[openStack.length - 1]);
+    return;
+  }
+  const accel = event.ctrlKey || event.metaKey;
+  if (accel && event.key === "Enter") {
+    event.preventDefault();
+    if (openStack[openStack.length - 1] === "editBackdrop") saveEdit();
+    else if (!openStack.length) saveReport();
+    return;
+  }
+  if (accel && !event.shiftKey && (event.key === "h" || event.key === "H")) {
+    event.preventDefault();
+    if (!openStack.includes("historyBackdrop")) openHistory();
+  }
+});
+
+function tickClock() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  $("clock").textContent =
+    pad(now.getDate()) + "/" + pad(now.getMonth() + 1) + "/" + now.getFullYear() +
+    "  " + pad(now.getHours()) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds());
+}
+
+tickClock();
+setInterval(tickClock, 1000);
+updateCounter();
+editor.focus();
+ping();
+setInterval(ping, CFG.pingSeconds * 1000);
+</script>
+</body>
+</html>
+"""
+
+
+class WebSessionState:
+    """What the request handlers share: the token, and who is looking.
+
+    Client bookkeeping is per-tab rather than a single counter so that closing
+    one of two open tabs does not end the session for the other.
+    """
+
+    def __init__(self, session: "ReporterSession", token: str):
+        self.session = session
+        self.token = token
+        self._lock = threading.Lock()
+        self._clients = {}          # client id -> monotonic time of last ping
+        self._ever_connected = False
+        self._page_served = False
+        self._bye_at = None
+
+    def note_page_served(self):
+        with self._lock:
+            self._page_served = True
+
+    @property
+    def page_served(self) -> bool:
+        with self._lock:
+            return self._page_served
+
+    def note_ping(self, client_id: str):
+        with self._lock:
+            self._clients[client_id] = time.monotonic()
+            self._ever_connected = True
+            # A reload arrives as bye-then-ping; the ping cancels the goodbye.
+            self._bye_at = None
+
+    def note_bye(self, client_id: str):
+        """Record that a page said goodbye.  Only a hint - see the grace above."""
+        with self._lock:
+            self._clients.pop(client_id, None)
+            if not self._clients and self._bye_at is None:
+                self._bye_at = time.monotonic()
+
+    def shutdown_reason(self, allow_idle_timeout: bool):
+        """Why the session should end, or None to keep going."""
+        now = time.monotonic()
+        with self._lock:
+            if allow_idle_timeout:
+                stale = [
+                    client
+                    for client, seen in self._clients.items()
+                    if now - seen >= WEB_IDLE_TIMEOUT_SECONDS
+                ]
+                for client in stale:
+                    del self._clients[client]
+                if stale and not self._clients:
+                    self._bye_at = now
+
+            if not self._ever_connected or self._clients:
+                return None
+            if self._bye_at is None:
+                return None
+            if now - self._bye_at < WEB_BYE_GRACE_SECONDS:
+                return None
+        return "browser page closed"
+
+
+class _ReporterHTTPServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+    state = None
+
+
+class _ReporterRequestHandler(http.server.BaseHTTPRequestHandler):
+    server_version = "TaskReporter"
+    sys_version = ""
+    protocol_version = "HTTP/1.1"
+
+    # ---------------------------------------------------------------- plumbing
+
+    def log_message(self, fmt, *args):
+        if os.environ.get("TASK_REPORT_WEB_DEBUG") == "1":
+            sys.stderr.write(
+                "  [web] %s %s\n"
+                % (datetime.now().strftime("%H:%M:%S.%f")[:-3], fmt % args)
+            )
+
+    @property
+    def _state(self) -> "WebSessionState":
+        return self.server.state
+
+    def _send(self, status: int, body: bytes, content_type: str):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        # The page never wants to be framed or sniffed, and it has no business
+        # being fetched by anything other than itself.
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _send_json(self, payload: dict, status: int = 200):
+        body = json.dumps(payload).encode("utf-8")
+        self._send(status, body, "application/json; charset=utf-8")
+
+    def _send_text(self, status: int, text: str):
+        self._send(status, text.encode("utf-8"), "text/plain; charset=utf-8")
+
+    def _query(self) -> dict:
+        parsed = urllib.parse.urlparse(self.path)
+        return urllib.parse.parse_qs(parsed.query)
+
+    def _path(self) -> str:
+        return urllib.parse.urlparse(self.path).path
+
+    def _authorised(self) -> bool:
+        """Reject anything that is not this session's own page.
+
+        Two checks, for two different problems.  The token is the real gate:
+        loopback is *not* private on WSL, because Windows forwards its own
+        localhost into the VM, so any process on either side of the boundary
+        can reach this port.  The Host check closes DNS rebinding, where a
+        hostile page resolves its own domain to 127.0.0.1 and talks to us from
+        the browser the user already trusts.
+        """
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip().lower()
+        if host.strip("[]") not in ("127.0.0.1", "localhost", "::1"):
+            self._send_text(403, "forbidden host")
+            return False
+
+        supplied = self.headers.get("X-Task-Report-Token") or ""
+        if not supplied:
+            values = self._query().get("t") or []
+            supplied = values[0] if values else ""
+        if not secrets.compare_digest(str(supplied), self._state.token):
+            self._send_text(403, "forbidden")
+            return False
+        return True
+
+    def _read_json(self) -> dict:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return {}
+        if length <= 0:
+            return {}
+        if length > WEB_MAX_BODY_BYTES:
+            return {}
+        try:
+            raw = self.rfile.read(length)
+            data = json.loads(raw.decode("utf-8"))
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    # ------------------------------------------------------------------ routes
+
+    def do_GET(self):
+        path = self._path()
+
+        if path == "/favicon.ico":
+            self._send(204, b"", "image/x-icon")
+            return
+
+        if not self._authorised():
+            return
+
+        if path in ("/", "/index.html"):
+            self._state.note_page_served()
+            self._send(200, _render_web_page(self._state.token), "text/html; charset=utf-8")
+            return
+
+        if path == "/api/health":
+            self._send_json({"ok": True})
+            return
+
+        if path == "/api/list":
+            self._send_json({"reports": _web_list_reports()})
+            return
+
+        self._send_text(404, "not found")
+
+    def do_HEAD(self):
+        self.do_GET()
+
+    def do_POST(self):
+        if not self._authorised():
+            return
+
+        path = self._path()
+
+        if path == "/api/bye":
+            # Sent by sendBeacon on tab close, so it carries no body.
+            values = self._query().get("client") or []
+            self._state.note_bye(values[0] if values else "")
+            self._send_json({"ok": True})
+            return
+
+        payload = self._read_json()
+
+        if path == "/api/ping":
+            self._state.note_ping(str(payload.get("client") or ""))
+            session = self._state.session
+            events = [
+                event
+                for event in session.drain_events()
+                if event.get("origin") not in ("browser", "window")
+            ]
+            self._send_json(
+                {
+                    "ok": True,
+                    "events": events,
+                    "shuttingDown": session.is_shutting_down(),
+                    "reason": session.reason,
+                    "queued": pending_report_count(),
+                }
+            )
+            return
+
+        if path == "/api/save":
+            self._send_json(_web_save_report(self._state.session, payload))
+            return
+
+        if path == "/api/update":
+            self._send_json(_web_update_report(payload))
+            return
+
+        if path == "/api/delete":
+            self._send_json(_web_delete_report(payload))
+            return
+
+        self._send_text(404, "not found")
+
+
+# ---------------------------------------------------------------------------
+# Browser UI actions - thin wrappers over the same workbook helpers the
+# terminal console uses, so both surfaces cannot drift apart.
+# ---------------------------------------------------------------------------
+
+
+def _render_web_page(token: str) -> bytes:
+    config = {
+        "token": token,
+        "clientId": secrets.token_urlsafe(9),
+        "maxLength": MAX_REPORT_LENGTH,
+        "pingSeconds": 3,
+        "workbook": EXCEL_FILE_PATH,
+        "pendingFile": PENDING_FILE_PATH,
+    }
+    page = WEB_PAGE_TEMPLATE.replace("%%CONFIG%%", json.dumps(config))
+    return page.encode("utf-8")
+
+
+def _web_list_reports() -> list:
+    return [
+        {"index": index, "datetime": when, "text": text}
+        for index, (when, text) in enumerate(load_reports_from_excel())
+    ]
+
+
+def _web_save_report(session: "ReporterSession", payload: dict) -> dict:
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        return {"ok": False, "message": "The report cannot be empty."}
+    if len(text) > MAX_REPORT_LENGTH:
+        return {
+            "ok": False,
+            "message": (
+                f"Report is too long ({len(text)} chars). "
+                f"The limit is {MAX_REPORT_LENGTH}."
+            ),
+        }
+    try:
+        timestamp = append_report_to_excel(text)
+    except ReportQueuedError as exc:
+        session.record_save("browser", exc.timestamp, queued=True)
+        print(f"  [~] Filed from the browser at {exc.timestamp} (workbook locked).")
+        return {"ok": True, "timestamp": exc.timestamp, "queued": True}
+    except Exception as exc:
+        return {"ok": False, "message": f"An unexpected error occurred: {exc}"}
+
+    session.record_save("browser", timestamp)
+    print(f"  [ok] Filed from the browser at {timestamp} -> {EXCEL_FILE_NAME}")
+    return {"ok": True, "timestamp": timestamp, "queued": False}
+
+
+def _web_row_index(payload: dict):
+    try:
+        index = int(payload.get("index"))
+    except (TypeError, ValueError):
+        return None
+    return index if index >= 0 else None
+
+
+def _web_update_report(payload: dict) -> dict:
+    index = _web_row_index(payload)
+    if index is None:
+        return {"ok": False, "message": "That report could not be identified."}
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        return {"ok": False, "message": "Report text cannot be empty."}
+    if len(text) > MAX_REPORT_LENGTH:
+        return {
+            "ok": False,
+            "message": (
+                f"Report is too long ({len(text)} chars). "
+                f"The limit is {MAX_REPORT_LENGTH}."
+            ),
+        }
+    try:
+        update_report_in_excel(index, str(payload.get("datetime") or "").strip(), text)
+    except PermissionError:
+        return {
+            "ok": False,
+            "message": (
+                "Could not write the workbook - it is probably open in Excel. "
+                "Close it and try again."
+            ),
+        }
+    except Exception as exc:
+        return {"ok": False, "message": f"An unexpected error occurred: {exc}"}
+    return {"ok": True}
+
+
+def _web_delete_report(payload: dict) -> dict:
+    index = _web_row_index(payload)
+    if index is None:
+        return {"ok": False, "message": "That report could not be identified."}
+    try:
+        delete_report_from_excel(index)
+    except PermissionError:
+        return {
+            "ok": False,
+            "message": (
+                "Could not write the workbook - it is probably open in Excel. "
+                "Close it and try again."
+            ),
+        }
+    except Exception as exc:
+        return {"ok": False, "message": f"An unexpected error occurred: {exc}"}
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Starting the server and getting a browser pointed at it
+# ---------------------------------------------------------------------------
+
+
+def start_web_server(session: "ReporterSession", port_hint: int = None):
+    """Bind the UI server.  Returns (server, state, error).
+
+    A busy port is never allowed to be the reason the UI does not come up: the
+    preferred range is tried in order and then the OS picks one.
+    """
+    state = WebSessionState(session, secrets.token_urlsafe(24))
+
+    if port_hint:
+        candidates = [port_hint]
+    else:
+        candidates = list(WEB_PREFERRED_PORTS) + [0]
+
+    last_error = None
+    for port in candidates:
+        try:
+            server = _ReporterHTTPServer(
+                (WEB_HOST, port), _ReporterRequestHandler
+            )
+        except OSError as exc:
+            last_error = exc
+            continue
+        server.state = state
+        thread = threading.Thread(
+            target=server.serve_forever,
+            kwargs={"poll_interval": 0.2},
+            name="task-report-web",
+            daemon=True,
+        )
+        thread.start()
+        return server, state, None
+
+    if port_hint:
+        return None, None, f"port {port_hint} is not available ({last_error})"
+    return None, None, f"no loopback port could be bound ({last_error})"
+
+
+def is_wsl() -> bool:
+    if os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"):
+        return True
+    try:
+        with open("/proc/version", "r", encoding="utf-8", errors="replace") as fh:
+            return "microsoft" in fh.read().lower()
+    except OSError:
+        return False
+
+
+def web_url(port: int, token: str, host: str = None) -> str:
+    if host is None:
+        # Windows reaches into the VM through the name `localhost`; a bare
+        # 127.0.0.1 also works, and is the fallback if name resolution on the
+        # Windows side prefers ::1 (where nothing is listening).
+        host = "localhost" if is_wsl() else WEB_HOST
+    return f"http://{host}:{port}/?t={token}"
+
+
+def _browser_launchers(url: str) -> list:
+    """Ways to open a URL, best first.  Each entry is (label, argv)."""
+    launchers = []
+
+    override = (os.environ.get("TASK_REPORT_BROWSER") or "").strip()
+    if override:
+        launchers.append((override, [*override.split(), url]))
+
+    if is_wsl():
+        # Handing the URL to Windows is the whole point - the page must be
+        # drawn by a Windows browser, not by anything inside the VM.
+        launchers.append(
+            (
+                "Windows default browser",
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    f"Start-Process '{url}'",
+                ],
+            )
+        )
+        launchers.append(("cmd start", ["cmd.exe", "/c", "start", "", url]))
+        # explorer.exe reports failure even when it succeeds, so it is last and
+        # its exit code is ignored (see _run_launcher).
+        launchers.append(("explorer", ["explorer.exe", url]))
+
+    for tool, label in (
+        ("wslview", "wslview"),
+        ("xdg-open", "xdg-open"),
+        ("gio", "gio open"),
+        ("open", "open"),
+    ):
+        resolved = shutil.which(tool)
+        if not resolved:
+            continue
+        argv = [resolved, "open", url] if tool == "gio" else [resolved, url]
+        launchers.append((label, argv))
+
+    return launchers
+
+
+def _run_launcher(label: str, argv: list) -> bool:
+    try:
+        result = subprocess.run(
+            argv,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+            check=False,
+        )
+    except Exception:
+        return False
+    # explorer.exe returns 1 on success; everything else is trusted as normal.
+    if argv[0].endswith("explorer.exe"):
+        return True
+    return result.returncode == 0
+
+
+def open_in_browser(url: str) -> str:
+    """Ask the desktop to open `url`.  Returns the label that accepted it."""
+    for label, argv in _browser_launchers(url):
+        if _run_launcher(label, argv):
+            return label
+    try:
+        if webbrowser.open(url, new=2):
+            return "python webbrowser"
+    except Exception:
+        pass
+    return ""
+
+
+def _wait_for_page(state: "WebSessionState", timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if state.page_served:
+            return True
+        time.sleep(0.15)
+    return state.page_served
+
+
+# ---------------------------------------------------------------------------
 # Terminal console
 # ---------------------------------------------------------------------------
 
@@ -1619,7 +2805,7 @@ def _print_cli_banner(dual: bool):
     print("  TASK REPORTER - terminal console")
     print("=" * 68)
     if dual:
-        print("  The window and this console are both live.")
+        print("  The browser UI and this console are both live.")
         print("  File the report in whichever one you like.")
         print("  Closing either one closes the other.")
     else:
@@ -1834,7 +3020,200 @@ def run_stdin_oneshot(session: ReporterSession) -> int:
     return 0 if save_report_text(text, "stdin", session) else 1
 
 
+def _redraw_cli_prompt(session: ReporterSession):
+    """Put the prompt back after a background thread has printed over it."""
+    if session.cli_active and not session.is_shutting_down():
+        sys.stdout.write("\n" + CLI_PROMPT)
+        sys.stdout.flush()
+
+
+def _print_web_banner(url: str, launcher: str, opened: bool):
+    print()
+    print("=" * 68)
+    print("  TASK REPORTER - browser UI")
+    print("=" * 68)
+    if opened and launcher:
+        print(f"  Opening in your browser via {launcher}.")
+    elif opened:
+        print("  No browser opener answered - open the address below yourself.")
+    else:
+        print("  Browser launch was skipped (--no-browser).")
+    print(f"  Address : {url}")
+    print("  This address is single-use: the token changes every session.")
+    print("-" * 68)
+
+
+def _ensure_page_loaded(session: ReporterSession, state: WebSessionState, port: int, primary_url: str):
+    """Make sure a browser really did get the page, and say what to do if not.
+
+    The one loopback quirk worth retrying: some Windows setups resolve
+    `localhost` to ::1 first, where nothing is listening, while the literal
+    127.0.0.1 goes straight through WSL's forwarder.
+    """
+    if _wait_for_page(state, WEB_FIRST_CLIENT_TIMEOUT):
+        return
+
+    alternate = web_url(port, state.token, host=WEB_HOST)
+    if alternate != primary_url:
+        print()
+        print(f"  The page has not loaded yet - retrying with {alternate}")
+        if open_in_browser(alternate) and _wait_for_page(
+            state, WEB_FIRST_CLIENT_TIMEOUT
+        ):
+            _redraw_cli_prompt(session)
+            return
+
+    print()
+    print("  The browser did not load the page on its own.")
+    print("  Copy one of these into any browser window:")
+    print(f"    {primary_url}")
+    if alternate != primary_url:
+        print(f"    {alternate}")
+    print("  Nothing is blocked in the meantime - the console below still files")
+    print("  reports, and --doctor explains what went wrong.")
+    _redraw_cli_prompt(session)
+
+
+def _watch_web_clients(
+    session: ReporterSession, state: WebSessionState, allow_idle_timeout: bool
+):
+    """End the session once the last browser page is gone.
+
+    This is the browser-side half of "closing either surface closes the other".
+    """
+    while not session.is_shutting_down():
+        reason = state.shutdown_reason(allow_idle_timeout)
+        if reason:
+            session.request_shutdown(reason)
+            return
+        time.sleep(0.5)
+
+
+def _start_shutdown_watchdog(session: ReporterSession):
+    """Take the process down when the *other* surface ends the session.
+
+    The console is parked inside input() and cannot be woken from here, so - as
+    before - the process is exited from under it once the workbook is quiet.
+    That is what makes closing the browser close the terminal too.
+    """
+
+    def _wait_and_exit():
+        session.wait_for_shutdown()
+        # A beat for the page's next ping to collect the shutdown, so it can
+        # show "session ended" rather than a failed connection.
+        time.sleep(0.6)
+        wait_for_quiet_workbook()
+        _print_session_summary(session)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
+
+    threading.Thread(
+        target=_wait_and_exit, name="task-report-exit", daemon=True
+    ).start()
+
+
+def run_web(
+    session: ReporterSession,
+    start_cli: bool,
+    port_hint: int = None,
+    open_browser: bool = True,
+):
+    """Run the browser UI.  Returns an exit code, or None if it could not start."""
+    server, state, error = start_web_server(session, port_hint)
+    if server is None:
+        print(f"  The browser UI could not start: {error}")
+        return None
+
+    port = server.server_address[1]
+    url = web_url(port, state.token)
+
+    launcher = open_in_browser(url) if open_browser else ""
+    _print_web_banner(url, launcher, open_browser)
+
+    if open_browser:
+        # In a thread: a slow browser must not hold up the console prompt.
+        threading.Thread(
+            target=_ensure_page_loaded,
+            args=(session, state, port, url),
+            name="task-report-web-check",
+            daemon=True,
+        ).start()
+
+    # Only the browser-only session may end itself on silence; with a console
+    # present, a throttled background tab must not take the console down.
+    threading.Thread(
+        target=_watch_web_clients,
+        args=(session, state, not start_cli),
+        name="task-report-web-watch",
+        daemon=True,
+    ).start()
+
+    if start_cli:
+        _start_shutdown_watchdog(session)
+        cli_console_loop(session, dual=True)
+    else:
+        while not session.is_shutting_down():
+            session.wait_for_shutdown(0.3)
+
+    session.request_shutdown("session ended")
+    try:
+        server.shutdown()
+    except Exception:
+        pass
+    return 0
+
+
+def _http_probe(url: str):
+    """Fetch `url` from this shell.  Returns (ok, detail)."""
+    try:
+        with urllib.request.urlopen(url, timeout=5) as response:
+            return response.status == 200, f"HTTP {response.status}"
+    except urllib.error.HTTPError as exc:
+        return False, f"HTTP {exc.code}"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def _windows_http_probe(url: str):
+    """Fetch `url` from the Windows side, which is where the browser lives."""
+    if not shutil.which("powershell.exe"):
+        return False, "powershell.exe is not on PATH (no Windows interop)"
+    command = (
+        "try { "
+        f"$r = Invoke-WebRequest -UseBasicParsing -Uri '{url}' -TimeoutSec 6; "
+        "'STATUS ' + [int]$r.StatusCode "
+        "} catch { 'ERROR ' + $_.Exception.Message }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+            capture_output=True,
+            text=True,
+            timeout=25,
+            check=False,
+        )
+    except Exception as exc:
+        return False, f"could not run powershell.exe: {exc}"
+    output = " ".join((result.stdout or "").split()).strip()
+    if output.startswith("STATUS 200"):
+        return True, "HTTP 200"
+    return False, output or "no answer from powershell.exe"
+
+
+# Both the console's normal return and the shutdown watchdog reach for the
+# summary, and whichever loses the race must not print it twice.
+_SUMMARY_LOCK = threading.Lock()
+_SUMMARY_PRINTED = False
+
+
 def _print_session_summary(session: ReporterSession):
+    global _SUMMARY_PRINTED
+    with _SUMMARY_LOCK:
+        if _SUMMARY_PRINTED:
+            return
+        _SUMMARY_PRINTED = True
+
     print()
     print(f"Task Reporter closed - {session.reason or 'session ended'}.")
     if session.saved_count:
@@ -1845,57 +3224,163 @@ def _print_session_summary(session: ReporterSession):
         print(f"{queued} report(s) still queued for the workbook.")
 
 
+def _doctor_web_section() -> bool:
+    """Check the browser UI end to end.  Returns True when it can be used."""
+    print("  Browser UI - the default surface")
+    print("  " + "-" * 64)
+
+    server, state, error = start_web_server(ReporterSession())
+    if server is None:
+        print(f"  [x ] no loopback port could be bound -> {error}")
+        print("       This is the only way the browser UI can fail outright.")
+        return False
+
+    port = server.server_address[1]
+    try:
+        print(f"  [ok] serving on {WEB_HOST}:{port}")
+
+        ok_here, detail = _http_probe(
+            f"http://{WEB_HOST}:{port}/api/health?t={state.token}"
+        )
+        print(f"  [{'ok' if ok_here else 'x '}] reachable from this shell -> {detail}")
+
+        reachable = ok_here
+        if is_wsl():
+            # This is the check that matters: the page is fetched and drawn by
+            # a Windows browser, so Windows is what has to reach the port.
+            windows_ok = False
+            for host in ("localhost", WEB_HOST):
+                ok, detail = _windows_http_probe(
+                    f"http://{host}:{port}/api/health?t={state.token}"
+                )
+                print(
+                    f"  [{'ok' if ok else 'x '}] reachable from Windows "
+                    f"via {host} -> {detail}"
+                )
+                windows_ok = windows_ok or ok
+            reachable = reachable and windows_ok
+        else:
+            print("  [--] not WSL - the local browser is used directly")
+
+        openers = [label for label, _argv in _browser_launchers("http://127.0.0.1/")]
+        print(f"  browser openers    : {', '.join(openers) if openers else '(none)'}")
+        if not openers:
+            print("       No opener found. The URL is printed at start-up so it")
+            print("       can be pasted into a browser by hand.")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    print()
+    if reachable:
+        print("  [ok] The browser UI works. This is what runs by default.")
+    else:
+        print("  [x ] The browser could not reach the server.")
+        print("       Set TASK_REPORT_BROWSER to a specific opener, or paste the")
+        print("       URL printed at start-up into a browser yourself.")
+    return reachable
+
+
+def _doctor_qt_section(forced_platform: str = None) -> bool:
+    print()
+    print("  Qt window - opt-in fallback (--qt)")
+    print("  " + "-" * 64)
+
+    platform_name, attempts = probe_qt_platform(forced_platform)
+    for name, ok, detail in attempts:
+        print(f"  [{'ok' if ok else 'x '}] platform '{name}' -> {detail}")
+
+    print()
+    if platform_name:
+        print(f"  [ok] A window renders under '{platform_name}'.")
+        print("       Note that this probe cannot promise the next window will")
+        print("       render too - WSLg can degrade between one and the next,")
+        print("       which is exactly why the browser UI is now the default.")
+        return True
+
+    print("  [x ] No Qt platform could put a window on screen.")
+    print("       Nothing is lost - the browser UI does not use Qt at all.")
+    print("       If you specifically want the Qt window back, a degraded WSLg")
+    print("       session is usually cleared from Windows with:")
+    print("         wsl.exe --shutdown        (then reopen)")
+    print("       or force a platform:  ./task-report --qt --platform xcb")
+    return False
+
+
 def run_doctor(forced_platform: str = None) -> int:
     print("Task Reporter - environment check")
-    print("-" * 68)
+    print("=" * 68)
     print(f"  interpreter        : {sys.executable}")
     print(f"  script folder      : {BASE_DIR}")
     print(f"  workbook           : {EXCEL_FILE_PATH}")
     print(f"  workbook exists    : {os.path.exists(EXCEL_FILE_PATH)}")
     print(f"  queued reports     : {pending_report_count()}")
+    print(f"  running under WSL  : {is_wsl()}")
+    print(f"  windows interop    : {bool(shutil.which('powershell.exe'))}")
     print(f"  PySide6 importable : {GUI_AVAILABLE}")
     print(f"  DISPLAY            : {os.environ.get('DISPLAY') or '(unset)'}")
     print(f"  WAYLAND_DISPLAY    : {os.environ.get('WAYLAND_DISPLAY') or '(unset)'}")
     print(f"  stdin is a tty     : {bool(sys.stdin) and sys.stdin.isatty()}")
+    print("=" * 68)
+
+    web_ok = _doctor_web_section()
+    _doctor_qt_section(forced_platform)
+
+    print()
     print("-" * 68)
-
-    platform_name, attempts = probe_qt_platform(forced_platform)
-    for name, ok, detail in attempts:
-        print(f"  [{'ok' if ok else 'x '}] platform '{name}' -> {detail}")
-    if platform_name:
-        print()
-        print(f"  [ok] The window renders under '{platform_name}'.")
-        print("       Both the window and the terminal console will be available.")
-        return 0
-
-    print()
-    print("  [x] No Qt platform could put a window on screen.")
-    print("      The terminal console will be used instead; nothing is lost.")
-    print()
-    print("      A window that is created but never painted is almost always a")
-    print("      degraded WSLg session. From Windows, this usually clears it:")
-    print("        wsl.exe --shutdown        (then reopen)")
-    print()
-    print("      To force a specific platform, either flag or env var works:")
-    print("        ./task-report --platform xcb")
-    print("        TASK_REPORT_QT_PLATFORM=xcb ./task-report")
+    if web_ok:
+        print("  Verdict: run ./task-report - the browser UI will come up.")
+    else:
+        print("  Verdict: the terminal console still works everywhere:")
+        print("    ./task-report --cli")
     return 0
 
 
 def main(argv: list) -> int:
+    # Without a tty, Python block-buffers stdout - which would hide the one
+    # line that matters most when a browser fails to open: the UI's address.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(line_buffering=True)
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(
         prog="task-report-maker.py",
         description=(
-            "File task reports into task_reports.xlsx. By default the GUI "
-            "window and the terminal console run together; closing either one "
-            "ends the session."
+            "File task reports into task_reports.xlsx. By default the browser "
+            "UI and the terminal console run together; closing either one ends "
+            "the session."
         ),
     )
     parser.add_argument(
-        "--gui", action="store_true", help="GUI only (no terminal console)"
+        "--gui", action="store_true", help="UI only (no terminal console)"
     )
     parser.add_argument(
-        "--cli", action="store_true", help="Terminal console only (no window)"
+        "--cli", action="store_true", help="Terminal console only (no UI)"
+    )
+    parser.add_argument(
+        "--qt",
+        action="store_true",
+        help=(
+            "Use the old PySide6 window instead of the browser UI. Depends on "
+            "a working display; the browser UI does not."
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        metavar="N",
+        help=(
+            f"Serve the browser UI on port N instead of the first free port "
+            f"from {WEB_PREFERRED_PORTS[0]}-{WEB_PREFERRED_PORTS[-1]}."
+        ),
+    )
+    parser.add_argument(
+        "--no-browser",
+        dest="no_browser",
+        action="store_true",
+        help="Start the UI server but print the address instead of opening it",
     )
     parser.add_argument(
         "-m",
@@ -1913,14 +3398,14 @@ def main(argv: list) -> int:
         "--platform",
         metavar="NAME",
         help=(
-            "Force a Qt platform plugin (e.g. wayland, xcb, offscreen) instead "
+            "With --qt, force a Qt platform plugin (e.g. wayland, xcb) instead "
             "of auto-detecting. Also settable as TASK_REPORT_QT_PLATFORM."
         ),
     )
     parser.add_argument(
         "--doctor",
         action="store_true",
-        help="Explain whether the GUI can start, and why not if it cannot",
+        help="Check both UIs end to end and explain anything that cannot start",
     )
     args = parser.parse_args(argv)
 
@@ -1956,7 +3441,32 @@ def main(argv: list) -> int:
     platform_name = None
     attempts = []
 
+    start_cli = not args.gui and stdin_is_tty
+    if not args.cli and not args.gui and not stdin_is_tty:
+        print("No interactive terminal attached - running the UI only.")
+
+    # The browser UI first, because it is the surface that does not depend on a
+    # display server.  It only steps aside if no loopback port can be bound.
+    if not args.cli and not args.qt:
+        exit_code = run_web(
+            session,
+            start_cli=start_cli,
+            port_hint=args.port,
+            open_browser=not args.no_browser,
+        )
+        if exit_code is not None:
+            wait_for_quiet_workbook()
+            _print_session_summary(session)
+            sys.stdout.flush()
+            sys.stderr.flush()
+            # Hard exit for the same reason as below: the console thread may be
+            # parked inside input().
+            os._exit(exit_code)
+        print("  Trying the Qt window instead.")
+
     if not args.cli:
+        # Only the Qt path needs an interpreter that can import PySide6, so the
+        # re-exec dance is confined to it.
         ensure_movs_python(script_path, argv)
         relaunch_with_gui_if_possible(script_path, argv)
         platform_name, attempts = probe_qt_platform(args.platform)
@@ -1971,14 +3481,11 @@ def main(argv: list) -> int:
                 f"Warning: '{platform_name}' does not draw on a real screen. "
                 "The window will be invisible;"
             )
-            print("         use --cli, or --platform wayland/xcb, to get out of it.")
-        start_cli = not args.gui and stdin_is_tty
-        if not args.gui and not stdin_is_tty:
-            print("No interactive terminal attached - running the window only.")
+            print("         drop --qt for the browser UI, or use --cli.")
         try:
             exit_code = run_gui(session, start_cli=start_cli)
         except Exception as exc:
-            print(f"GUI failed to start ({exc}). Falling back to the terminal.")
+            print(f"The Qt window failed to start ({exc}).")
         else:
             wait_for_quiet_workbook()
             _print_session_summary(session)
@@ -1989,7 +3496,7 @@ def main(argv: list) -> int:
             os._exit(exit_code)
 
     if not args.cli:
-        print("The GUI could not start, so the terminal console is taking over.")
+        print("No UI could start, so the terminal console is taking over.")
         print(f"  Reason: {_describe_gui_failure(attempts)}")
         print("  Run with --doctor for the full check.")
 
