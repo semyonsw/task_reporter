@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "seq": 9,
+  "tasks": [
+    {
+      "id": "U-zgZI20Wbo",
+      "seq": 1,
+      "date": "2026-08-28",
+      "project": "Buy For Me",
+      "text": "Make a telegram bot for every updated or added row.",
+      "done": true,
+      "created_at": "28/08/2026 12:31:15",
+      "done_at": "28/08/2026 14:59:38",
+      "filed_at": "28/08/2026 14:59:47"
+    },
+    {
+      "id": "JfX1-DWMYOg",
+      "seq": 2,
+      "date": "2026-08-28",
+      "project": "Logistics",
+      "text": "Start making the xml file out of the xlsx and csv files",
+      "done": true,
+      "created_at": "28/08/2026 12:31:59",
+      "done_at": "28/08/2026 14:59:40",
+      "filed_at": "28/08/2026 14:59:47"
+    },
+    {
+      "id": "F0qoMOr17QA",
+      "seq": 3,
+      "date": "2026-08-28",
+      "project": "Buy For Me",
+      "text": "find the clickable buttons of tracking code links and send that with the data using telegram bot",
+      "done": true,
+      "created_at": "28/08/2026 12:44:35",
+      "done_at": "28/08/2026 14:59:39",
+      "filed_at": "28/08/2026 14:59:47"
+    },
+    {
+      "id": "0Hpj6bbYmsY",
+      "seq": 4,
+      "date": "2026-08-28",
+      "project": "Buy For Me",
+      "text": "Make a telegram bot for every updated or added row.",
+      "done": true,
+      "created_at": "28/08/2026 15:00:45",
+      "done_at": "28/08/2026 15:02:22",
+      "filed_at": "28/08/2026 15:02:38"
+    },
+    {
+      "id": "20DsdQlRh-Y",
+      "seq": 5,
+      "date": "2026-08-28",
+      "project": "Logistics",
+      "text": "Make the correct xml file out of xlsx and csv files",
+      "done": true,
+      "created_at": "28/08/2026 15:01:22",
+      "done_at": "28/08/2026 15:02:26",
+      "filed_at": "28/08/2026 15:02:38"
+    },
+    {
+      "id": "QOPZ7orzDDc",
+      "seq": 6,
+      "date": "2026-08-28",
+      "project": "Buy For Me",
+      "text": "add the clickable button for the tracking code reveal",
+      "done": true,
+      "created_at": "28/08/2026 15:02:07",
+      "done_at": "28/08/2026 15:02:23",
+      "filed_at": "28/08/2026 15:02:38"
+    },
+    {
+      "id": "sFrqLl0wx7A",
+      "seq": 7,
+      "date": "2026-08-28",
+      "project": "Logistics",
+      "text": "Make the correct xml file out of xlsx and csv files",
+      "done": true,
+      "created_at": "28/08/2026 15:03:26",
+      "done_at": "28/08/2026 15:03:45",
+      "filed_at": "28/08/2026 15:03:56"
+    },
+    {
+      "id": "KqelYdrE3Ao",
+      "seq": 8,
+      "date": "2026-08-28",
+      "project": "Buy For Me",
+      "text": "add the clickable button for the tracking code reveal",
+      "done": true,
+      "created_at": "28/08/2026 15:03:36",
+      "done_at": "28/08/2026 15:03:45",
+      "filed_at": "28/08/2026 15:03:56"
+    },
+    {
+      "id": "0QX785BszwE",
+      "seq": 9,
+      "date": "2026-08-28",
+      "project": "Buy For Me",
+      "text": "Make a telegram bot for every updated or added row.",
+      "done": true,
+      "created_at": "28/08/2026 15:03:43",
+      "done_at": "28/08/2026 15:03:47",
+      "filed_at": "28/08/2026 15:03:56"
+    }
+  ],
+  "projects": [
+    "Buy For Me",
+    "Logistics"
+  ]
+}

@@ -3,3 +3,8 @@ __pycache__/
 
 # runtime queue for reports that could not reach the workbook yet
 .task_reports_pending.jsonl
+
+# task board side files: the quarantined copy of an unreadable board, and the
+# in-flight temp file an atomic save writes through
+task_board.json.bad
+task_board.json.tmp

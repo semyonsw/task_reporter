@@ -49,10 +49,12 @@ except ModuleNotFoundError:
 
 import openpyxl
 from openpyxl import Workbook
+from openpyxl.styles import Alignment
 import argparse
 import http.server
 import json
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -74,8 +76,19 @@ EXCEL_FILE_PATH = os.path.join(BASE_DIR, EXCEL_FILE_NAME)
 # open in Excel).  They are merged back in automatically on the next save.
 PENDING_FILE_PATH = os.path.join(BASE_DIR, ".task_reports_pending.jsonl")
 
+# The task board lives beside the workbook rather than inside it.  Ticking a
+# box has to work while task_reports.xlsx is open in Excel, and a plain JSON
+# file is the only store that can promise that.
+TASKS_FILE_NAME = "task_board.json"
+TASKS_FILE_PATH = os.path.join(BASE_DIR, TASKS_FILE_NAME)
+
 MAX_REPORT_LENGTH = 2000
+MAX_TASK_LENGTH = 600
+MAX_PROJECT_LENGTH = 60
 TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S"
+# Dates are stored ISO (sortable) and shown the way the task list writes them.
+DATE_STORE_FORMAT = "%Y-%m-%d"
+DATE_DISPLAY_FORMAT = "%d.%m.%Y"
 
 RELAUNCH_ENV_FLAG = "TASK_REPORT_TK_RELAUNCH"
 MOVS_PYTHON = "/root/miniconda3/envs/movs/bin/python"
@@ -363,6 +376,45 @@ def probe_qt_platform(forced: str = None):
 
 _EXCEL_LOCK = threading.RLock()
 
+# Reports are written with line breaks in them - one line per task, a blank
+# line between projects.  Excel draws a multi-line cell as a single
+# run-together line unless the cell says wrap_text, and cells written by
+# openpyxl carry no alignment at all, so a filed report looked concatenated in
+# the workbook even though the newlines were there the whole time.
+REPORT_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
+STAMP_ALIGNMENT = Alignment(vertical="top")
+
+
+def _style_report_cells(ws):
+    """Give every row the wrapping that makes a multi-line report readable."""
+    for row in ws.iter_rows(min_row=1, max_col=2):
+        row[0].alignment = STAMP_ALIGNMENT
+        row[1].alignment = REPORT_ALIGNMENT
+
+
+def excel_owner_file() -> str:
+    """The owner file Excel keeps beside a workbook it has open: ~$name.xlsx."""
+    folder, name = os.path.split(EXCEL_FILE_PATH)
+    return os.path.join(folder, "~$" + name)
+
+
+def workbook_is_open_in_excel() -> bool:
+    """True while Excel holds the workbook open.
+
+    This check matters far more than it looks.  The project normally lives on a
+    Windows drive reached through WSL, and over that mount Excel's lock does not
+    reach Python as a PermissionError - so a write *succeeds*, and then Excel
+    saves its own older in-memory copy over the top minutes later and the row is
+    simply gone.  Nothing in the app can see that happen after the fact, so the
+    only safe move is to not write at all while Excel is in there: queue the
+    report instead and merge it once the file is free, which is exactly what the
+    pending queue already exists to do.
+    """
+    try:
+        return os.path.exists(excel_owner_file())
+    except OSError:
+        return False
+
 
 class ReportQueuedError(Exception):
     """The workbook was locked, so the report went to the pending queue."""
@@ -380,6 +432,7 @@ def _create_workbook():
     ws.append(["Date-Time", "Task Report"])
     ws.column_dimensions["A"].width = 25
     ws.column_dimensions["B"].width = 100
+    _style_report_cells(ws)
     wb.save(EXCEL_FILE_PATH)
 
 
@@ -434,12 +487,16 @@ def flush_pending_reports() -> int:
         entries = _read_pending()
         if not entries:
             return 0
+        if workbook_is_open_in_excel():
+            # Leave them queued; the next flush with Excel closed takes them.
+            return 0
         try:
             _ensure_workbook()
             wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
             ws = wb.active
             for timestamp, report in entries:
                 ws.append([timestamp, report])
+            _style_report_cells(ws)
             wb.save(EXCEL_FILE_PATH)
         except Exception:
             return 0
@@ -447,8 +504,12 @@ def flush_pending_reports() -> int:
         return len(entries)
 
 
-def append_report_to_excel(report_text: str) -> str:
+def append_report_to_excel(report_text: str, timestamp: str = None) -> str:
     """Append a report and return the timestamp that was written.
+
+    `timestamp` is for reports that belong to a day other than today - the task
+    board files a backlog under the date its tasks were listed against, not the
+    date it happened to press the button.  Left out, it is now.
 
     Raises ReportQueuedError when the workbook cannot be written - the report
     is safely queued in that case rather than lost.
@@ -457,10 +518,16 @@ def append_report_to_excel(report_text: str) -> str:
         raise ValueError("The report cannot be empty.")
 
     text = report_text.strip()
-    timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
+    timestamp = (timestamp or "").strip() or datetime.now().strftime(TIMESTAMP_FORMAT)
 
     with _EXCEL_LOCK:
         pending = _read_pending()
+        if workbook_is_open_in_excel():
+            # Writing now would appear to work and then be thrown away.
+            _queue_pending(timestamp, text)
+            raise ReportQueuedError(
+                timestamp, OSError(f"{EXCEL_FILE_NAME} is open in Excel")
+            )
         try:
             _ensure_workbook()
             wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
@@ -468,6 +535,7 @@ def append_report_to_excel(report_text: str) -> str:
             for queued_timestamp, queued_report in pending:
                 ws.append([queued_timestamp, queued_report])
             ws.append([timestamp, text])
+            _style_report_cells(ws)
             wb.save(EXCEL_FILE_PATH)
         except (PermissionError, OSError) as exc:
             _queue_pending(timestamp, text)
@@ -539,13 +607,25 @@ def compact_excel():
             ws.delete_rows(r)
         for dt, rpt in kept:
             ws.append([dt, rpt])
-        ws.column_dimensions["A"].width = 25
-        ws.column_dimensions["B"].width = 100
+        # The widths are deliberately left alone: this runs after every edit
+        # and delete, and resetting them would undo whatever column sizing has
+        # been set in Excel.
+        _style_report_cells(ws)
         wb.save(EXCEL_FILE_PATH)
+
+
+def _refuse_if_excel_has_it():
+    """Rewriting the sheet under Excel loses the rewrite - say so instead."""
+    if workbook_is_open_in_excel():
+        raise PermissionError(
+            f"{EXCEL_FILE_NAME} is open in Excel. Close it and try again - "
+            "changing it now would be undone the next time Excel saves."
+        )
 
 
 def delete_report_from_excel(row_index: int):
     with _EXCEL_LOCK:
+        _refuse_if_excel_has_it()
         flush_pending_reports()
         if not os.path.exists(EXCEL_FILE_PATH):
             return
@@ -562,6 +642,7 @@ def delete_report_from_excel(row_index: int):
 
 def update_report_in_excel(row_index: int, new_datetime: str, new_text: str):
     with _EXCEL_LOCK:
+        _refuse_if_excel_has_it()
         flush_pending_reports()
         if not os.path.exists(EXCEL_FILE_PATH):
             return
@@ -573,8 +654,555 @@ def update_report_in_excel(row_index: int, new_datetime: str, new_text: str):
             return
         ws.cell(row=excel_row, column=1, value=new_datetime)
         ws.cell(row=excel_row, column=2, value=new_text.strip())
+        _style_report_cells(ws)
         wb.save(EXCEL_FILE_PATH)
         compact_excel()
+
+
+# ---------------------------------------------------------------------------
+# The task board - what has to be done, and what has been done
+# ---------------------------------------------------------------------------
+#
+# The board mirrors the way the task list is kept by hand: a day, the projects
+# worked on that day in [square brackets], and the tasks under each one with a
+# box to tick.  Ticking the box is the whole point - "file checked tasks" turns
+# every ticked-but-not-yet-filed task into report rows, one row per day, with
+# the tasks grouped under their project headers exactly as they were written.
+#
+# It is stored as JSON rather than as a second worksheet for one reason: the
+# workbook cannot be written while Excel has it open, and ticking a box must
+# never be the thing that fails.  Reports are the archive; the board is the
+# working surface in front of it.
+
+_BOARD_LOCK = threading.RLock()
+BOARD_VERSION = 1
+# Bumped on every write.  Both surfaces live in one process, so a counter is
+# all that is needed for the browser to notice a change made in the terminal.
+_BOARD_REVISION = 0
+# Excel refuses a cell longer than this, so a composed report is capped just
+# under it rather than being lost at save time.
+EXCEL_MAX_CELL = 32000
+
+
+def today_iso() -> str:
+    return datetime.now().strftime(DATE_STORE_FORMAT)
+
+
+def normalise_date(value) -> str:
+    """Accept the ways a date gets typed and return one ISO date.
+
+    `2026-08-21` comes from the date picker, `21.08.2026` from the task list,
+    `21/08/2026` from the report timestamps.  Anything unreadable falls back to
+    today rather than rejecting the task the user just wrote.
+    """
+    if isinstance(value, datetime):
+        return value.strftime(DATE_STORE_FORMAT)
+    text = str(value or "").strip()
+    if not text:
+        return today_iso()
+    text = text.split()[0]
+    for fmt in (DATE_STORE_FORMAT, DATE_DISPLAY_FORMAT, "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(text, fmt).strftime(DATE_STORE_FORMAT)
+        except ValueError:
+            continue
+    return today_iso()
+
+
+def display_date(date_iso: str) -> str:
+    try:
+        return datetime.strptime(date_iso, DATE_STORE_FORMAT).strftime(
+            DATE_DISPLAY_FORMAT
+        )
+    except (ValueError, TypeError):
+        return str(date_iso or "")
+
+
+def _empty_board() -> dict:
+    return {"version": BOARD_VERSION, "seq": 0, "tasks": [], "projects": []}
+
+
+def _clean_project_names(raw) -> list:
+    """Trim, cap and de-duplicate a list of project names, keeping its order."""
+    names = []
+    seen = set()
+    for item in raw or []:
+        name = str(item or "").strip()[:MAX_PROJECT_LENGTH]
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            names.append(name)
+    return names
+
+
+def _remember_project(board: dict, name: str):
+    """Move a project name to the front of the remembered list.
+
+    The list outlives the tasks that used the name, which is the point: the
+    project dropdown has to keep offering "onex-academy" after that day's tasks
+    have been filed and cleared off the board.
+    """
+    name = str(name or "").strip()[:MAX_PROJECT_LENGTH]
+    if not name:
+        return
+    board["projects"] = [name] + [
+        other for other in board["projects"] if other.lower() != name.lower()
+    ]
+
+
+def _clean_task(raw, seq_hint: int) -> dict:
+    """Normalise one stored task, so a hand-edited file cannot break the UI."""
+    if not isinstance(raw, dict):
+        return None
+    text = str(raw.get("text") or "").strip()
+    if not text:
+        return None
+    filed_at = str(raw.get("filed_at") or "").strip() or None
+    return {
+        "id": str(raw.get("id") or "").strip() or secrets.token_urlsafe(8),
+        "seq": int(raw.get("seq") or seq_hint),
+        "date": normalise_date(raw.get("date")),
+        "project": str(raw.get("project") or "").strip()[:MAX_PROJECT_LENGTH],
+        "text": text[:MAX_TASK_LENGTH],
+        "done": bool(raw.get("done")),
+        "created_at": str(raw.get("created_at") or "").strip(),
+        "done_at": str(raw.get("done_at") or "").strip() or None,
+        "filed_at": filed_at,
+    }
+
+
+def _read_board() -> dict:
+    """Read the board from disk.  Never raises - a broken file is set aside."""
+    if not os.path.exists(TASKS_FILE_PATH):
+        return _empty_board()
+    try:
+        with open(TASKS_FILE_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        # Losing the board silently would be worse than losing it loudly, so
+        # the unreadable file is kept next to the new one.
+        try:
+            shutil.copyfile(TASKS_FILE_PATH, TASKS_FILE_PATH + ".bad")
+        except OSError:
+            pass
+        return _empty_board()
+
+    if not isinstance(data, dict):
+        return _empty_board()
+
+    tasks = []
+    for position, raw in enumerate(data.get("tasks") or []):
+        task = _clean_task(raw, position)
+        if task is not None:
+            tasks.append(task)
+
+    seq = data.get("seq")
+    try:
+        seq = int(seq)
+    except (TypeError, ValueError):
+        seq = 0
+    seq = max([seq] + [task["seq"] for task in tasks] + [0])
+
+    if "projects" in data:
+        projects = _clean_project_names(data.get("projects"))
+    else:
+        # A board written before names were remembered: seed the list from the
+        # tasks on it, most recently written first.
+        projects = _clean_project_names(
+            task["project"]
+            for task in sorted(tasks, key=lambda item: item["seq"], reverse=True)
+        )
+
+    return {
+        "version": BOARD_VERSION,
+        "seq": seq,
+        "tasks": tasks,
+        "projects": projects,
+    }
+
+
+def _write_board(board: dict):
+    """Replace the board file atomically, so a crash cannot truncate it."""
+    global _BOARD_REVISION
+    board["version"] = BOARD_VERSION
+    temp_path = TASKS_FILE_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as fh:
+        json.dump(board, fh, indent=2, ensure_ascii=False)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(temp_path, TASKS_FILE_PATH)
+    _BOARD_REVISION += 1
+
+
+def board_revision() -> str:
+    """A fingerprint that changes whenever the board does.
+
+    The counter covers this process; the file's mtime and size cover the rest,
+    so a task added from a second shell (./task-report -t "...") also makes an
+    open browser page notice and reload.
+    """
+    with _BOARD_LOCK:
+        try:
+            info = os.stat(TASKS_FILE_PATH)
+            disk = f"{info.st_mtime_ns}.{info.st_size}"
+        except OSError:
+            disk = "0.0"
+        return f"{_BOARD_REVISION}.{disk}"
+
+
+def _sorted_tasks(tasks: list) -> list:
+    """Oldest day first; within a day, the order the tasks were written.
+
+    This is the canonical order - it is the order the rows go into the
+    workbook.  The board view turns the days round so today is on top.
+    """
+    return sorted(tasks, key=lambda task: (task["date"], task["seq"]))
+
+
+def load_tasks() -> list:
+    with _BOARD_LOCK:
+        return _sorted_tasks(_read_board()["tasks"])
+
+
+def known_projects() -> list:
+    """Project names to offer, most recently used first.
+
+    This is what fills the project dropdown - the point is that the same
+    project keeps the same spelling, because that spelling becomes the
+    [bracketed] header in the filed report.
+    """
+    with _BOARD_LOCK:
+        return list(_read_board()["projects"])
+
+
+def forget_project(name: str) -> bool:
+    """Stop offering a project name.  Tasks already using it are untouched.
+
+    Typos are the reason this exists: a name typed once would otherwise sit in
+    the dropdown forever.  Using the name again brings it back.
+    """
+    wanted = str(name or "").strip().lower()
+    if not wanted:
+        return False
+    with _BOARD_LOCK:
+        board = _read_board()
+        kept = [item for item in board["projects"] if item.lower() != wanted]
+        if len(kept) == len(board["projects"]):
+            return False
+        board["projects"] = kept
+        _write_board(board)
+        return True
+
+
+def add_task(date, project: str, text: str) -> dict:
+    text = str(text or "").strip()
+    if not text:
+        raise ValueError("The task cannot be empty.")
+    if len(text) > MAX_TASK_LENGTH:
+        raise ValueError(
+            f"Task is too long ({len(text)} chars). The limit is {MAX_TASK_LENGTH}."
+        )
+
+    with _BOARD_LOCK:
+        board = _read_board()
+        board["seq"] += 1
+        task = {
+            "id": secrets.token_urlsafe(8),
+            "seq": board["seq"],
+            "date": normalise_date(date),
+            "project": str(project or "").strip()[:MAX_PROJECT_LENGTH],
+            "text": text,
+            "done": False,
+            "created_at": datetime.now().strftime(TIMESTAMP_FORMAT),
+            "done_at": None,
+            "filed_at": None,
+        }
+        board["tasks"].append(task)
+        _remember_project(board, task["project"])
+        _write_board(board)
+        return task
+
+
+def update_task(task_id: str, **changes) -> dict:
+    """Change one task.  Only the keys passed in are touched."""
+    if "text" in changes:
+        text = str(changes["text"] or "").strip()
+        if not text:
+            raise ValueError("The task cannot be empty.")
+        if len(text) > MAX_TASK_LENGTH:
+            raise ValueError(
+                f"Task is too long ({len(text)} chars). "
+                f"The limit is {MAX_TASK_LENGTH}."
+            )
+        changes["text"] = text
+
+    with _BOARD_LOCK:
+        board = _read_board()
+        for task in board["tasks"]:
+            if task["id"] != task_id:
+                continue
+            if "text" in changes:
+                task["text"] = changes["text"]
+            if "project" in changes:
+                task["project"] = (
+                    str(changes["project"] or "").strip()[:MAX_PROJECT_LENGTH]
+                )
+                _remember_project(board, task["project"])
+            if "date" in changes:
+                task["date"] = normalise_date(changes["date"])
+            if "done" in changes:
+                done = bool(changes["done"])
+                # Keep the original tick time when nothing actually changed.
+                if done != task["done"]:
+                    task["done_at"] = (
+                        datetime.now().strftime(TIMESTAMP_FORMAT) if done else None
+                    )
+                task["done"] = done
+            _write_board(board)
+            return task
+    raise KeyError("That task no longer exists.")
+
+
+def delete_task(task_id: str) -> bool:
+    with _BOARD_LOCK:
+        board = _read_board()
+        remaining = [task for task in board["tasks"] if task["id"] != task_id]
+        if len(remaining) == len(board["tasks"]):
+            return False
+        board["tasks"] = remaining
+        _write_board(board)
+        return True
+
+
+def delete_filed_tasks() -> int:
+    """Clear out everything already written into the workbook."""
+    with _BOARD_LOCK:
+        board = _read_board()
+        remaining = [task for task in board["tasks"] if not task["filed_at"]]
+        removed = len(board["tasks"]) - len(remaining)
+        if removed:
+            board["tasks"] = remaining
+            _write_board(board)
+        return removed
+
+
+def unfiled_checked_tasks(tasks: list = None) -> list:
+    """The tasks that pressing "file checked tasks" would actually write."""
+    if tasks is None:
+        tasks = load_tasks()
+    return [task for task in tasks if task["done"] and not task["filed_at"]]
+
+
+def board_counts() -> dict:
+    tasks = load_tasks()
+    return {
+        "total": len(tasks),
+        "done": sum(1 for task in tasks if task["done"]),
+        "open": sum(1 for task in tasks if not task["done"]),
+        "filed": sum(1 for task in tasks if task["filed_at"]),
+        "ready": len(unfiled_checked_tasks(tasks)),
+    }
+
+
+def group_day_projects(tasks: list) -> list:
+    """One day's tasks as [(project, [tasks])].
+
+    Un-bracketed tasks come first - a task with no project has no header to sit
+    under - then one block per project, in the order the projects were first
+    written that day.  Everything that renders a day goes through here, so the
+    board and the report it files always agree on the order.
+    """
+    order = []
+    grouped = {}
+    for task in tasks:
+        name = task["project"]
+        if name not in grouped:
+            grouped[name] = []
+            order.append(name)
+        grouped[name].append(task)
+
+    # "" sorts to the front on purpose.
+    first_seen = {name: position for position, name in enumerate(order)}
+    order.sort(key=lambda name: (name != "", first_seen[name]))
+    return [(name, grouped[name]) for name in order]
+
+
+def group_by_day(tasks: list) -> list:
+    """Tasks as [(date, [(project, [tasks])])], oldest day first."""
+    order = []
+    grouped = {}
+    for task in tasks:
+        if task["date"] not in grouped:
+            grouped[task["date"]] = []
+            order.append(task["date"])
+        grouped[task["date"]].append(task)
+    return [(date, group_day_projects(grouped[date])) for date in sorted(order)]
+
+
+# One task, one line, marked so a run of them reads as a list rather than as a
+# paragraph that happens to have line breaks in it.
+TASK_BULLET = "• "
+TASK_INDENT = " " * len(TASK_BULLET)
+
+
+def _task_lines(text: str) -> list:
+    """One task as a bulleted line, with any lines of its own lined up under it."""
+    own = [line.strip() for line in str(text).strip().splitlines()]
+    own = [line for line in own if line]
+    if not own:
+        return []
+    return [TASK_BULLET + own[0]] + [TASK_INDENT + line for line in own[1:]]
+
+
+def compose_report_text(tasks: list) -> str:
+    """Render one day's tasks the way the task list writes them.
+
+    A project heading, its tasks bulleted underneath it, and a blank line
+    before the next project - so several projects in one day stay legible
+    instead of running together.
+    """
+    blocks = []
+    for name, group in group_day_projects(tasks):
+        lines = ["[" + name + "]"] if name else []
+        for task in group:
+            lines.extend(_task_lines(task["text"]))
+        if lines:
+            blocks.append("\n".join(lines))
+    return "\n\n".join(blocks).strip()
+
+
+def _bucket_timestamp(date_iso: str) -> str:
+    """The Date-Time a day's report is filed under.
+
+    The day comes from the task list, the clock time from now - which for
+    today's tasks is simply the current time, and for a backlog keeps the row
+    on the day the work actually happened.
+    """
+    now = datetime.now()
+    try:
+        day = datetime.strptime(date_iso, DATE_STORE_FORMAT)
+    except (ValueError, TypeError):
+        return now.strftime(TIMESTAMP_FORMAT)
+    return day.replace(
+        hour=now.hour, minute=now.minute, second=now.second
+    ).strftime(TIMESTAMP_FORMAT)
+
+
+def preview_filing() -> list:
+    """What filing would write, without writing it.
+
+    One entry per day, oldest first, so the rows land in the workbook in the
+    same order the days happened.
+    """
+    ready = unfiled_checked_tasks()
+    if not ready:
+        return []
+
+    by_date = {}
+    for task in ready:
+        by_date.setdefault(task["date"], []).append(task)
+
+    groups = []
+    for date_iso in sorted(by_date):
+        day_tasks = sorted(by_date[date_iso], key=lambda task: task["seq"])
+        text = compose_report_text(day_tasks)
+        groups.append(
+            {
+                "date": date_iso,
+                "dateLabel": display_date(date_iso),
+                "timestamp": _bucket_timestamp(date_iso),
+                "text": text,
+                "length": len(text),
+                "taskCount": len(day_tasks),
+                "taskIds": [task["id"] for task in day_tasks],
+                "projects": [
+                    name
+                    for name in dict.fromkeys(task["project"] for task in day_tasks)
+                    if name
+                ],
+            }
+        )
+    return groups
+
+
+def file_checked_tasks(session=None, origin: str = "board") -> dict:
+    """Write every ticked-but-unfiled task into the workbook.
+
+    Returns what happened: the rows written, how many tasks were marked filed,
+    and whether any row had to be queued because Excel held the workbook.  A
+    queued row still counts as filed - it is in the pending file and merges
+    itself in later, so re-filing it would duplicate it.
+    """
+    # Held across the whole operation - reading what to file, writing it, and
+    # marking it filed have to be one step, or two surfaces filing at the same
+    # instant could both write the same day.  _BOARD_LOCK is an RLock and is
+    # always taken before _EXCEL_LOCK, never the other way round.
+    with _BOARD_LOCK:
+        return _file_checked_tasks_locked(session, origin)
+
+
+def _file_checked_tasks_locked(session, origin: str) -> dict:
+    groups = preview_filing()
+    if not groups:
+        return {"ok": False, "message": "No checked tasks are waiting to be filed."}
+
+    written = []
+    failed = []
+    filed_ids = []
+
+    for group in groups:
+        text = group["text"]
+        if len(text) > EXCEL_MAX_CELL:
+            failed.append(
+                {
+                    "dateLabel": group["dateLabel"],
+                    "message": (
+                        f"{group['dateLabel']} is {len(text)} characters, which "
+                        f"is over what one cell holds ({EXCEL_MAX_CELL}). Split "
+                        "that day or file fewer tasks at once."
+                    ),
+                }
+            )
+            continue
+
+        queued = False
+        try:
+            timestamp = append_report_to_excel(text, timestamp=group["timestamp"])
+        except ReportQueuedError as exc:
+            timestamp = exc.timestamp
+            queued = True
+        except Exception as exc:
+            failed.append({"dateLabel": group["dateLabel"], "message": str(exc)})
+            continue
+
+        if session is not None:
+            session.record_save(origin, timestamp, queued=queued)
+
+        written.append(
+            {
+                "dateLabel": group["dateLabel"],
+                "timestamp": timestamp,
+                "taskCount": group["taskCount"],
+                "queued": queued,
+            }
+        )
+        filed_ids.extend(group["taskIds"])
+
+    if filed_ids:
+        stamp = datetime.now().strftime(TIMESTAMP_FORMAT)
+        board = _read_board()
+        wanted = set(filed_ids)
+        for task in board["tasks"]:
+            if task["id"] in wanted:
+                task["filed_at"] = stamp
+        _write_board(board)
+
+    return {
+        "ok": bool(written),
+        "written": written,
+        "failed": failed,
+        "filedCount": len(filed_ids),
+        "queued": any(row["queued"] for row in written),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1814,6 +2442,271 @@ kbd {
 }
 .hint { margin: 0; font-size: 12px; color: #5B6EA6; line-height: 1.6; }
 
+/* view switch */
+.hidden { display: none !important; }
+.viewtabs {
+  display: flex; gap: 4px; margin: 0 auto; padding: 3px; flex: none;
+  background: #0D1020; border: 1px solid #1E2640; border-radius: 10px;
+}
+.viewtab {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 18px; height: 30px; border: none; border-radius: 7px;
+  background: transparent; color: #5B6EA6;
+  font-size: 13px; font-weight: 600;
+}
+.viewtab:hover { color: #A8BFFF; background: #161B27; }
+.viewtab.is-on { background: #1E2640; color: #E8F0FE; }
+.tab-badge {
+  min-width: 18px; padding: 0 5px; border-radius: 9px;
+  background: #2563EB; color: #FFFFFF;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
+.tab-badge:empty { display: none; }
+
+/* board card */
+.board {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 20px 24px; flex: 1; min-height: 0;
+}
+.board-head { display: flex; align-items: baseline; gap: 12px; flex: none; }
+.board-sub { margin-left: auto; font-size: 13px; color: #5B6EA6; }
+.board-sub b { color: #A8BFFF; font-weight: 700; }
+
+/* the add-a-task row */
+.composer { display: flex; flex-wrap: wrap; gap: 8px; flex: none; }
+.composer input {
+  padding: 0 12px; height: 38px;
+  background: #0D1020; color: #CBD5E1;
+  border: 2px solid #1E2640; border-radius: 9px;
+  font-size: 14px; font-family: inherit; outline: none; min-width: 0;
+}
+.composer input:focus { border-color: #3B82F6; }
+.composer input::placeholder { color: #3D4F7A; }
+.composer .c-date { flex: none; width: 150px; color-scheme: dark; font-variant-numeric: tabular-nums; }
+.composer .c-proj { flex: none; width: 190px; }
+.composer .c-text { flex: 1; min-width: 220px; }
+.composer .c-add { flex: none; height: 38px; min-width: 120px; }
+
+/* project dropdown */
+.combo { position: relative; display: flex; }
+.combo input { width: 100%; }
+/* IDs, because the modal's own #tProject rule would otherwise win the padding
+   and the caret would sit on top of the text. */
+#taskProject, #tProject { padding-right: 30px; }
+.combo-caret {
+  position: absolute; top: 0; right: 0; width: 28px; height: 100%;
+  display: grid; place-items: center;
+  background: transparent; border: none; border-radius: 0 7px 7px 0;
+  color: #4A5C8C; font-size: 10px; line-height: 1;
+}
+.combo-caret:hover { color: #A8BFFF; }
+.combo-panel {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+  /* At least as wide as the box, but free to grow for a long project name
+     rather than truncating the thing you are trying to read. */
+  min-width: 100%; width: max-content; max-width: 420px;
+  display: none; flex-direction: column; padding: 4px;
+  max-height: 244px; overflow-y: auto;
+  background: #161B27; border: 1px solid #2D3860; border-radius: 9px;
+  box-shadow: 0 14px 30px rgba(3, 5, 12, .66);
+}
+.combo-panel.open { display: flex; }
+.combo-option { display: flex; align-items: center; border-radius: 6px; }
+.combo-option:hover, .combo-option.is-active { background: #1E2640; }
+.combo-name {
+  flex: 1; min-width: 0; padding: 7px 9px; text-align: left;
+  background: transparent; border: none; color: #CBD5E1;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px;
+  line-height: 1.45;
+  /* Wraps rather than truncating: a half-shown project name is no use for
+     deciding whether it is the one you meant. */
+  white-space: normal; overflow-wrap: anywhere;
+}
+.combo-option:hover .combo-name, .combo-option.is-active .combo-name { color: #FFFFFF; }
+/* Only offered on hover: forgetting a name is housekeeping, not a main action. */
+.combo-forget {
+  flex: none; width: 22px; height: 22px; margin-right: 4px; padding: 0;
+  border-radius: 5px; background: transparent; border: none;
+  color: transparent; font-size: 11px; line-height: 1;
+  display: grid; place-items: center;
+}
+.combo-option:hover .combo-forget { color: #4A5C8C; }
+.combo-forget:hover { background: #3D1A2A; color: #FCA5A5; }
+.combo-hint { padding: 8px 10px; color: #5B6EA6; font-size: 12px; line-height: 1.5; }
+.combo-hint b { color: #A8BFFF; font-weight: 600; }
+.combo-sep { height: 1px; margin: 4px 6px; background: #1E2640; }
+
+/* the day / project / task list */
+.board-scroll {
+  flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 10px;
+  background: #0D1020; border: 1px solid #1E2640; border-radius: 10px;
+}
+.day { padding-top: 14px; }
+.day + .day { border-top: 1px solid #161B27; margin-top: 12px; }
+.day-head {
+  display: flex; align-items: baseline; gap: 10px;
+  position: sticky; top: 0; z-index: 1;
+  padding: 6px 0 8px; background: #0D1020;
+}
+.day-date {
+  font-size: 15px; font-weight: 700; color: #E8F0FE;
+  font-variant-numeric: tabular-nums;
+}
+.day-when { font-size: 12px; color: #5B6EA6; }
+.day-count { margin-left: auto; font-size: 12px; color: #5B6EA6; font-variant-numeric: tabular-nums; }
+.day-count.all-done { color: #22C55E; }
+
+.proj { padding: 2px 0 6px; }
+.proj-head {
+  padding: 4px 0 4px 2px; font-size: 13px; font-weight: 700; color: #7B90D4;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.proj-head.no-project { color: #3D4F7A; font-style: italic; font-family: inherit; font-weight: 600; }
+
+.task {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 6px 8px; margin-left: 4px; border-radius: 7px;
+}
+.task:hover { background: #131728; }
+/* The native checkbox is a light grey square whatever the page around it
+   looks like, so it is drawn here instead - same shape, same palette. */
+.task input[type="checkbox"], .toggle input {
+  appearance: none; -webkit-appearance: none;
+  flex: none; margin: 0; cursor: pointer;
+  display: grid; place-items: center;
+  background: #0D1020; border: 2px solid #2D3860; border-radius: 5px;
+}
+.task input[type="checkbox"] { width: 18px; height: 18px; margin-top: 1px; }
+.toggle input { width: 16px; height: 16px; }
+.task input[type="checkbox"]::after, .toggle input::after {
+  content: ""; width: 5px; height: 9px; opacity: 0;
+  border: solid #FFFFFF; border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+.task input[type="checkbox"]:checked, .toggle input:checked {
+  background: #2563EB; border-color: #3B82F6;
+}
+.task input[type="checkbox"]:checked::after, .toggle input:checked::after { opacity: 1; }
+.task input[type="checkbox"]:hover:not(:disabled), .toggle input:hover { border-color: #3B82F6; }
+.task input[type="checkbox"]:focus-visible, .toggle input:focus-visible {
+  outline: 2px solid #3B82F6; outline-offset: 2px;
+}
+/* A filed task cannot be unticked - the row is already in the workbook. */
+.task input[type="checkbox"]:disabled { cursor: default; background: #131728; border-color: #1E2640; }
+.task input[type="checkbox"]:disabled:checked { background: #1E2640; border-color: #2D3860; }
+.task input[type="checkbox"]:disabled::after { border-color: #46527A; }
+.task-text {
+  flex: 1; min-width: 0; padding: 0; text-align: left;
+  background: transparent; border: none;
+  color: #CBD5E1; font-family: inherit; font-size: 14px; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.task-text:hover { color: #FFFFFF; text-decoration: underline dotted #2D3860; }
+.task-meta {
+  flex: none; font-size: 11px; color: #3D4F7A;
+  font-variant-numeric: tabular-nums; padding-top: 2px; white-space: nowrap;
+}
+.task-act {
+  flex: none; width: 24px; height: 24px; padding: 0; border-radius: 6px;
+  background: transparent; color: #4A5C8C; border: 1px solid transparent;
+  font-size: 13px; line-height: 1; display: grid; place-items: center;
+}
+.task:hover .task-act { color: #7B90D4; border-color: #2D3860; }
+.task-act:hover { background: #1E2640; color: #A8BFFF; }
+.task-act.danger:hover { background: #3D1A2A; color: #FCA5A5; border-color: #5B2030; }
+
+/* done, and filed - filed is struck through the way the task list marks it */
+.task.is-done .task-text { color: #6E7FA8; }
+.task.is-filed .task-text { color: #46527A; text-decoration: line-through; }
+.task.is-filed .task-meta { color: #2E3A5E; }
+.filed-tag {
+  flex: none; padding: 1px 7px; border-radius: 5px;
+  background: #14251C; color: #3F8A5E; border: 1px solid #1E4030;
+  font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
+
+.board-empty { padding: 40px 12px; text-align: center; color: #5B6EA6; line-height: 1.7; }
+.board-empty b { color: #A8BFFF; }
+
+/* board footer */
+.board-footer { display: flex; align-items: center; gap: 12px; flex: none; padding-top: 4px; }
+.toggle {
+  display: flex; align-items: center; gap: 7px; flex: none;
+  font-size: 13px; color: #7B90D4; cursor: pointer; user-select: none;
+}
+.toggle:hover { color: #A8BFFF; }
+
+/* filing preview */
+.preview-wrap {
+  flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 14px;
+  background: #0D1020; border: 1px solid #1E2640; border-radius: 8px;
+}
+.pv-group { padding-top: 14px; }
+.pv-group + .pv-group { border-top: 1px solid #1E2640; margin-top: 4px; }
+.pv-head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 8px; }
+.pv-when {
+  font-size: 13px; font-weight: 700; color: #A8BFFF;
+  font-variant-numeric: tabular-nums;
+}
+.pv-note { margin-left: auto; font-size: 11px; color: #5B6EA6; font-variant-numeric: tabular-nums; }
+.pv-body {
+  margin: 0; padding: 12px 14px;
+  background: #161B27; border: 1px solid #1E2640; border-radius: 8px;
+  color: #CBD5E1; font-family: inherit; font-size: 13px; line-height: 1.6;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.pv-warn { color: #F59E0B; }
+.pv-locked {
+  flex: none; padding: 10px 14px; border-radius: 8px;
+  background: #2A2010; border: 1px solid #5B4420; color: #F0B860;
+  font-size: 12px; line-height: 1.6;
+}
+.btn-left { margin-right: auto; }
+
+/* task edit dialog */
+.edit-row { display: flex; gap: 10px; }
+.edit-col { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+#tDate, #tProject, #tText {
+  width: 100%; padding: 6px 10px;
+  background: #0D1020; color: #CBD5E1;
+  border: 2px solid #1E2640; border-radius: 8px;
+  font-size: 14px; font-family: inherit; outline: none;
+}
+#tDate { color-scheme: dark; font-variant-numeric: tabular-nums; }
+#tText { min-height: 120px; resize: vertical; line-height: 1.5; }
+#tDate:focus, #tProject:focus, #tText:focus { border-color: #3B82F6; }
+
+@media (max-width: 760px) {
+  .page { padding: 12px; }
+  .header { padding: 12px 16px; }
+  .title { font-size: 20px; }
+  .clock { display: none; }
+  .content, .board { padding: 16px; }
+  .task-meta { display: none; }
+
+  /* Both footers are a single row of controls wider than a phone. Give the
+     status line its own row and let the primary button span the width. */
+  .footer, .board-footer { flex-wrap: wrap; row-gap: 10px; }
+  .status { flex: 1 0 100%; margin-right: 0; min-width: 0; }
+  .progress { flex: 1; width: auto; }
+  .save-btn { flex: 1 0 auto; min-width: 0; }
+  .board-footer .toggle { margin-right: auto; }
+  .board-footer .save-btn { flex: 1 0 100%; }
+  #clearFiledBtn { white-space: nowrap; padding: 0 16px; }
+}
+
+@media (max-width: 480px) {
+  /* Title, tabs and buttons stop fitting on one line - give the tabs their
+     own row rather than pushing the header off the right edge. */
+  .header { flex-wrap: wrap; row-gap: 10px; }
+  .viewtabs { order: 3; flex: 1 0 100%; margin: 0; }
+  .viewtab { flex: 1; justify-content: center; padding: 0 10px; }
+  /* Phone: day and project share a row, then the task, then the button. */
+  .composer .c-date, .composer .c-proj { flex: 1 1 140px; width: auto; }
+  .composer .c-text { flex: 1 0 100%; min-width: 0; }
+  .composer .c-add { flex: 1 0 100%; }
+}
+
 /* the session-over curtain */
 #gone {
   position: fixed; inset: 0; z-index: 40; display: none;
@@ -1827,6 +2720,10 @@ kbd {
 <div class="page">
   <header class="card header">
     <h1 class="title">Task Reporter</h1>
+    <div class="viewtabs">
+      <button class="viewtab is-on" id="tabReport" title="Write a report (Ctrl+B)">Report</button>
+      <button class="viewtab" id="tabBoard" title="Track tasks (Ctrl+B)">Board<span class="tab-badge" id="tabBadge"></span></button>
+    </div>
     <div class="header-right">
       <span class="clock" id="clock"></span>
       <button class="icon-btn" id="historyBtn" title="View previous reports" aria-label="View previous reports">&#9776;</button>
@@ -1836,7 +2733,7 @@ kbd {
 
   <div class="separator"></div>
 
-  <main class="card content">
+  <main class="card content" id="reportView">
     <h2 class="heading">What did you accomplish?</h2>
     <textarea id="editor" placeholder="Describe your work clearly and concisely&#8230;" autofocus></textarea>
     <div class="footer">
@@ -1846,6 +2743,91 @@ kbd {
       <button class="save-btn" id="saveBtn">Save Report</button>
     </div>
   </main>
+
+  <section class="card board hidden" id="boardView">
+    <div class="board-head">
+      <h2 class="heading">Task Board</h2>
+      <span class="board-sub" id="boardSummary"></span>
+    </div>
+
+    <form class="composer" id="composer" autocomplete="off">
+      <input type="date" id="taskDate" class="c-date" title="The day this task belongs to">
+      <div class="combo c-proj">
+        <input type="text" id="taskProject" placeholder="project" spellcheck="false"
+               maxlength="%%MAXPROJECT%%" role="combobox" aria-expanded="false"
+               aria-autocomplete="list" aria-controls="taskProjectPanel"
+               title="Project name - becomes the [bracketed] header in the filed report">
+        <button type="button" class="combo-caret" id="taskProjectCaret"
+                tabindex="-1" aria-label="Show existing projects">&#9662;</button>
+        <div class="combo-panel" id="taskProjectPanel" role="listbox"></div>
+      </div>
+      <input type="text" id="taskText" class="c-text"
+             placeholder="What needs doing&#8230;" maxlength="%%MAXTASK%%">
+      <button type="submit" class="btn btn-primary c-add">Add Task</button>
+    </form>
+
+    <div class="board-scroll" id="boardScroll"></div>
+
+    <div class="board-footer">
+      <span class="status" id="boardStatus">Ready</span>
+      <label class="toggle" title="Show tasks already written into the workbook">
+        <input type="checkbox" id="showFiled"> Show filed
+      </label>
+      <button class="btn" id="clearFiledBtn" title="Remove filed tasks from the board">Clear Filed</button>
+      <button class="save-btn" id="fileBtn">File Checked Tasks</button>
+    </div>
+  </section>
+</div>
+
+<div class="backdrop" id="previewBackdrop">
+  <div class="modal modal-lg">
+    <div class="modal-head">
+      <h3>File Checked Tasks</h3>
+      <span class="modal-count" id="previewCount"></span>
+    </div>
+    <p class="hint">
+      One report row per day, with the checked tasks under their project
+      headers. The tasks stay on the board afterwards, struck through, so
+      nothing gets filed twice.
+    </p>
+    <div class="pv-locked hidden" id="previewLocked"></div>
+    <div class="preview-wrap" id="previewWrap"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn btn-primary" id="previewConfirm">Write to Workbook</button>
+    </div>
+  </div>
+</div>
+
+<div class="backdrop" id="taskEditBackdrop">
+  <div class="modal modal-md">
+    <div class="modal-head"><h3>Edit Task</h3></div>
+    <div class="edit-row">
+      <div class="edit-col">
+        <span class="field-label">Date</span>
+        <input type="date" id="tDate">
+      </div>
+      <div class="edit-col">
+        <span class="field-label">Project</span>
+        <div class="combo">
+          <input type="text" id="tProject" placeholder="(no project)"
+                 spellcheck="false" autocomplete="off" maxlength="%%MAXPROJECT%%"
+                 role="combobox" aria-expanded="false" aria-autocomplete="list"
+                 aria-controls="tProjectPanel">
+          <button type="button" class="combo-caret" id="tProjectCaret"
+                  tabindex="-1" aria-label="Show existing projects">&#9662;</button>
+          <div class="combo-panel" id="tProjectPanel" role="listbox"></div>
+        </div>
+      </div>
+    </div>
+    <span class="field-label">Task</span>
+    <textarea id="tText" maxlength="%%MAXTASK%%"></textarea>
+    <div class="edit-error" id="tError"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn btn-primary" id="tSave">Save Changes</button>
+    </div>
+  </div>
 </div>
 
 <div class="backdrop" id="historyBackdrop">
@@ -1901,6 +2883,10 @@ kbd {
       <tr><td><kbd>Ctrl + Delete</kbd></td><td>Delete next word</td></tr>
       <tr><td><kbd>Ctrl + C</kbd> / <kbd>Ctrl + X</kbd> / <kbd>Ctrl + V</kbd></td><td>Copy / cut / paste</td></tr>
       <tr><td><kbd>Ctrl + H</kbd></td><td>Previous reports</td></tr>
+      <tr><td><kbd>Ctrl + B</kbd></td><td>Switch between Report and Board</td></tr>
+      <tr><td><kbd>Ctrl + Enter</kbd></td><td>On the board: file the checked tasks</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>In the add-task row: add the task</td></tr>
+      <tr><td><kbd>&#8593;</kbd> <kbd>&#8595;</kbd> <kbd>Enter</kbd></td><td>In the project box: pick from the list, or type a new name and press Enter</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Close a dialog</td></tr>
       <tr><td>Right-click</td><td>Open context menu</td></tr>
     </table>
@@ -2035,7 +3021,7 @@ function closeModal(id) {
   $(id).classList.remove("open");
   const at = openStack.indexOf(id);
   if (at !== -1) openStack.splice(at, 1);
-  if (!openStack.length) editor.focus();
+  if (!openStack.length) focusView();
 }
 
 document.querySelectorAll("[data-close]").forEach((btn) => {
@@ -2220,6 +3206,12 @@ async function ping() {
         event.queued ? "warn" : "success"
       );
     }
+    // The terminal can add, tick and file tasks too.  The revision changes on
+    // every write, so this is also what fills the Board badge in on start-up
+    // without the board having been opened.
+    if (out.boardRevision !== undefined && out.boardRevision !== boardRevision) {
+      loadBoard();
+    }
   } catch (err) {
     // A single miss means nothing - the server may just be busy saving.
   }
@@ -2245,6 +3237,735 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") ping();
 });
 
+/* --------------------------------------------------------------- task board */
+
+// The board is the same shape as the hand-kept task list it replaces: a day,
+// the projects worked on that day, and the tasks under each one with a box to
+// tick.  Ticking is what matters - "File Checked Tasks" turns every ticked task
+// into report rows, one row per day, grouped under [project] headers.
+
+const boardScroll = $("boardScroll");
+const tabBadge = $("tabBadge");
+
+let boardTasks = [];
+let boardCounts = { total: 0, done: 0, open: 0, filed: 0, ready: 0 };
+// What the server last said the board looked like.  null means "never read",
+// so the first ping pulls the board in even if the Report view is showing.
+let boardRevision = null;
+let showFiledTasks = false;
+let previewGroups = [];
+let editingTaskId = null;
+let currentView = "report";
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+/* ------------------------------------------------------------ board status */
+
+let boardStatusTimer = null;
+
+function setBoardStatus(text, kind) {
+  if (boardStatusTimer) { clearTimeout(boardStatusTimer); boardStatusTimer = null; }
+  const node = $("boardStatus");
+  node.textContent = text;
+  node.className = "status" + (kind ? " " + kind : "");
+}
+
+function flashBoard(text, kind) {
+  setBoardStatus(text, kind);
+  boardStatusTimer = setTimeout(() => {
+    boardStatusTimer = null;
+    setBoardStatus("Ready", null);
+  }, 6000);
+}
+
+/* --------------------------------------------------------------------- dates */
+
+const WEEKDAYS = [
+  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+];
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+
+function isoToday() {
+  const now = new Date();
+  return now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
+}
+
+function isoToDisplay(iso) {
+  const parts = String(iso || "").split("-");
+  return parts.length === 3 ? parts[2] + "." + parts[1] + "." + parts[0] : String(iso || "");
+}
+
+// "Today", "Yesterday", or the weekday and how far back it was.  Built from
+// local Y/M/D parts rather than Date.parse, which reads a bare ISO date as UTC
+// midnight and can land on the wrong day west of Greenwich.
+function relativeDay(iso) {
+  const parts = String(iso || "").split("-").map(Number);
+  if (parts.length !== 3 || parts.some((n) => !isFinite(n))) return "";
+  const day = new Date(parts[0], parts[1] - 1, parts[2]);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((day - today) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === -1) return "Yesterday";
+  if (diff === 1) return "Tomorrow";
+  const name = WEEKDAYS[day.getDay()];
+  if (diff < 0) return name + " · " + (-diff) + " days ago";
+  return name + " · in " + diff + " days";
+}
+
+// "21/08/2026 15:04:12" -> "15:04"
+function clockOf(stamp) {
+  const bits = String(stamp || "").split(" ");
+  return bits.length > 1 ? bits[1].slice(0, 5) : "";
+}
+
+/* --------------------------------------------------------------- board load */
+
+async function loadBoard() {
+  let out;
+  try {
+    out = await api("/api/tasks");
+  } catch (err) {
+    boardScroll.innerHTML = "";
+    boardScroll.appendChild(
+      el("div", "board-empty", "Could not read the task board.")
+    );
+    return;
+  }
+  boardTasks = out.tasks || [];
+  boardCounts = out.counts || boardCounts;
+  boardRevision = out.revision;
+  setProjectOptions(out.projects || []);
+  renderBoard();
+}
+
+/* --------------------------------------------------------- project dropdown */
+
+// A real dropdown rather than a <datalist>: browsers only reveal datalist
+// suggestions once you have typed a matching prefix, which is no use when the
+// whole point is seeing which projects already exist.  Typing a name that is
+// not in the list and pressing Enter is how a new project gets made - there is
+// no separate "create project" step.
+
+let boardProjects = [];
+const projectCombos = [];
+
+function attachProjectCombo(input, panel, caret, onCommit) {
+  // `typed` separates "the user is narrowing the list" from "this box already
+  // held a value" - opening the dropdown on a task that is already tagged
+  // [Logistics] has to show every project, not just that one.
+  const combo = { input: input, open: false, active: -1, items: [], typed: false };
+
+  function setOpen(state) {
+    combo.open = state;
+    panel.classList.toggle("open", state);
+    input.setAttribute("aria-expanded", state ? "true" : "false");
+  }
+
+  function close() {
+    combo.active = -1;
+    setOpen(false);
+  }
+
+  function commit(name) {
+    input.value = name;
+    close();
+    if (onCommit) onCommit();
+  }
+
+  function render() {
+    const typed = input.value.trim();
+    const needle = combo.typed ? typed.toLowerCase() : "";
+    combo.items = boardProjects.filter(
+      (name) => !needle || name.toLowerCase().includes(needle)
+    );
+
+    panel.innerHTML = "";
+
+    combo.items.forEach((name, index) => {
+      const row = el("div", "combo-option" + (index === combo.active ? " is-active" : ""));
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", index === combo.active ? "true" : "false");
+
+      const label = el("button", "combo-name", name);
+      label.type = "button";
+      label.tabIndex = -1;
+      // mousedown, and preventDefault: the input never loses focus, so its
+      // blur handler cannot close the panel out from under the click.
+      label.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        commit(name);
+      });
+      row.appendChild(label);
+
+      const forget = el("button", "combo-forget", "✕");
+      forget.type = "button";
+      forget.tabIndex = -1;
+      forget.title = "Forget this name (tasks already using it keep it)";
+      forget.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        forgetProject(name);
+      });
+      row.appendChild(forget);
+
+      panel.appendChild(row);
+    });
+
+    const hint = el("div", "combo-hint");
+    if (!boardProjects.length) {
+      hint.appendChild(document.createTextNode("No projects yet - type a name and press "));
+      hint.appendChild(el("b", null, "Enter"));
+      hint.appendChild(document.createTextNode("."));
+    } else if (!combo.items.length) {
+      hint.appendChild(document.createTextNode("No match. "));
+      hint.appendChild(el("b", null, "Enter"));
+      hint.appendChild(document.createTextNode(" uses “" + typed + "” as a new project."));
+    } else {
+      hint.appendChild(document.createTextNode("Pick with "));
+      hint.appendChild(el("b", null, "↑ ↓"));
+      hint.appendChild(document.createTextNode(" and "));
+      hint.appendChild(el("b", null, "Enter"));
+      hint.appendChild(document.createTextNode(", or type a new name."));
+    }
+    if (combo.items.length) panel.appendChild(el("div", "combo-sep"));
+    panel.appendChild(hint);
+  }
+
+  function open() {
+    combo.active = -1;
+    combo.typed = false;
+    render();
+    setOpen(true);
+  }
+
+  function move(step) {
+    if (!combo.open) { open(); return; }
+    const count = combo.items.length;
+    if (!count) return;
+    // active === -1 is the "keep what I typed" stop, so there are count + 1 of
+    // them and the arrows wrap through it rather than sticking at the ends.
+    const span = count + 1;
+    let slot = combo.active + 1 + step;
+    slot = ((slot % span) + span) % span;
+    combo.active = slot - 1;
+    render();
+    const active = panel.querySelector(".combo-option.is-active");
+    if (active) active.scrollIntoView({ block: "nearest" });
+  }
+
+  input.addEventListener("focus", open);
+  input.addEventListener("mousedown", () => { if (!combo.open) open(); });
+  input.addEventListener("input", () => {
+    combo.typed = true;
+    combo.active = -1;
+    if (!combo.open) setOpen(true);
+    render();
+  });
+
+  caret.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    if (combo.open) { close(); return; }
+    input.focus();
+    if (!combo.open) open();
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); move(1); return; }
+    if (event.key === "ArrowUp") { event.preventDefault(); move(-1); return; }
+    if (event.key === "Escape") {
+      // Only swallow Escape while the panel is up, so it still closes a dialog.
+      if (!combo.open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+      return;
+    }
+    if (event.key === "Enter") {
+      // Never submits the composer: Enter here means "this is the project",
+      // not "add the task".
+      event.preventDefault();
+      if (combo.open && combo.active >= 0) commit(combo.items[combo.active]);
+      else { close(); if (onCommit) onCommit(); }
+      return;
+    }
+    if (event.key === "Tab") close();
+  });
+
+  input.addEventListener("blur", close);
+
+  combo.close = close;
+  combo.refresh = () => { if (combo.open) render(); };
+  projectCombos.push(combo);
+  return combo;
+}
+
+function setProjectOptions(projects) {
+  boardProjects = projects || [];
+  for (const combo of projectCombos) combo.refresh();
+}
+
+async function forgetProject(name) {
+  try {
+    const out = await api("/api/projects/forget", { name: name });
+    if (!out.ok) { flashBoard(out.message || "Could not forget that name", "danger"); return; }
+  } catch (err) {
+    flashBoard("Lost contact with the reporter - nothing was changed", "danger");
+    return;
+  }
+  // Updated in place rather than by reloading the board, so an open panel does
+  // not blink shut while it is being tidied.
+  setProjectOptions(boardProjects.filter((item) => item !== name));
+  flashBoard("“" + name + "” removed from the project list", "success");
+}
+
+// A click anywhere else closes an open panel.  preventDefault on the options
+// above does not stop this from firing, hence the containment test.
+document.addEventListener("mousedown", (event) => {
+  for (const combo of projectCombos) {
+    if (!combo.open) continue;
+    const wrap = combo.input.closest(".combo");
+    if (wrap && !wrap.contains(event.target)) combo.close();
+  }
+});
+
+/* ------------------------------------------------------------- board render */
+
+// Days newest first; inside a day, projects in the order they were first
+// written, with un-projected tasks ahead of them - the same order the filed
+// report is composed in, so the board reads like a preview of it.
+function groupBoard(tasks) {
+  const days = [];
+  const byDate = new Map();
+
+  for (const task of tasks) {
+    let day = byDate.get(task.date);
+    if (!day) {
+      day = { date: task.date, projects: [], byProject: new Map() };
+      byDate.set(task.date, day);
+      days.push(day);
+    }
+    let bucket = day.byProject.get(task.project);
+    if (!bucket) {
+      bucket = { project: task.project, tasks: [] };
+      day.byProject.set(task.project, bucket);
+      day.projects.push(bucket);
+    }
+    bucket.tasks.push(task);
+  }
+
+  for (const day of days) {
+    // Array#sort is stable, so everything else keeps its first-written order.
+    day.projects.sort(
+      (a, b) => (a.project === "" ? -1 : 0) - (b.project === "" ? -1 : 0)
+    );
+  }
+  days.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  return days;
+}
+
+function renderBoard() {
+  const ready = boardCounts.ready || 0;
+  tabBadge.textContent = ready ? String(ready) : "";
+
+  const summary = $("boardSummary");
+  summary.innerHTML = "";
+  if (boardCounts.total) {
+    summary.appendChild(document.createTextNode(boardCounts.open + " open · "));
+    const readyNode = el("b", null, String(ready));
+    summary.appendChild(readyNode);
+    summary.appendChild(
+      document.createTextNode(" ready to file · " + boardCounts.filed + " filed")
+    );
+  }
+
+  $("fileBtn").disabled = !ready;
+  $("clearFiledBtn").disabled = !boardCounts.filed;
+
+  const visible = showFiledTasks
+    ? boardTasks
+    : boardTasks.filter((task) => !task.filed_at);
+
+  boardScroll.innerHTML = "";
+
+  if (!visible.length) {
+    const empty = el("div", "board-empty");
+    if (!boardTasks.length) {
+      empty.appendChild(document.createTextNode("No tasks yet."));
+      empty.appendChild(document.createElement("br"));
+      empty.appendChild(
+        document.createTextNode("Add one above - the day and the ")
+      );
+      empty.appendChild(el("b", null, "[project]"));
+      empty.appendChild(
+        document.createTextNode(" are what the filed report is grouped by.")
+      );
+    } else {
+      empty.appendChild(
+        document.createTextNode("Everything on the board is filed.")
+      );
+      empty.appendChild(document.createElement("br"));
+      empty.appendChild(
+        document.createTextNode("Tick “Show filed” to see it.")
+      );
+    }
+    boardScroll.appendChild(empty);
+    return;
+  }
+
+  for (const day of groupBoard(visible)) {
+    const dayNode = el("section", "day");
+
+    const head = el("div", "day-head");
+    head.appendChild(el("span", "day-date", isoToDisplay(day.date)));
+    head.appendChild(el("span", "day-when", relativeDay(day.date)));
+
+    let total = 0;
+    let done = 0;
+    for (const bucket of day.projects) {
+      for (const task of bucket.tasks) {
+        total += 1;
+        if (task.done) done += 1;
+      }
+    }
+    const count = el("span", "day-count" + (done === total ? " all-done" : ""),
+                     done + " of " + total + " done");
+    head.appendChild(count);
+    dayNode.appendChild(head);
+
+    for (const bucket of day.projects) {
+      const group = el("div", "proj");
+      group.appendChild(
+        bucket.project
+          ? el("div", "proj-head", "[" + bucket.project + "]")
+          : el("div", "proj-head no-project", "(no project)")
+      );
+      for (const task of bucket.tasks) group.appendChild(taskRow(task));
+      dayNode.appendChild(group);
+    }
+
+    boardScroll.appendChild(dayNode);
+  }
+}
+
+function taskRow(task) {
+  const filed = Boolean(task.filed_at);
+  const row = el(
+    "div",
+    "task" + (task.done ? " is-done" : "") + (filed ? " is-filed" : "")
+  );
+
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = task.done;
+  box.disabled = filed;
+  box.title = filed
+    ? "Already written into the workbook on " + task.filed_at
+    : task.done
+      ? "Done - will be filed on the next “File Checked Tasks”"
+      : "Tick when this is done";
+  box.addEventListener("change", () => toggleTask(task, box.checked));
+  row.appendChild(box);
+
+  // A button, not a div: it is genuinely the way into the edit dialog, and
+  // textContent keeps arbitrary task text out of the parser.
+  const text = el("button", "task-text", task.text);
+  text.type = "button";
+  text.title = "Click to edit";
+  text.addEventListener("click", () => openTaskEdit(task.id));
+  row.appendChild(text);
+
+  if (filed) row.appendChild(el("span", "filed-tag", "filed"));
+
+  const meta = el("span", "task-meta", clockOf(task.done_at || task.created_at));
+  meta.title =
+    "Added " + (task.created_at || "?") +
+    (task.done_at ? "\nTicked " + task.done_at : "") +
+    (filed ? "\nFiled " + task.filed_at : "");
+  row.appendChild(meta);
+
+  const edit = el("button", "task-act", "✎");
+  edit.type = "button";
+  edit.title = "Edit day, project or text";
+  edit.addEventListener("click", () => openTaskEdit(task.id));
+  row.appendChild(edit);
+
+  const remove = el("button", "task-act danger", "✕");
+  remove.type = "button";
+  remove.title = "Delete this task";
+  remove.addEventListener("click", () => deleteTask(task));
+  row.appendChild(remove);
+
+  return row;
+}
+
+/* --------------------------------------------------------------- board edits */
+
+async function boardCall(path, body, failure) {
+  try {
+    const out = await api(path, body);
+    if (!out.ok) {
+      flashBoard(out.message || failure, "danger");
+      await loadBoard();
+      return null;
+    }
+    await loadBoard();
+    return out;
+  } catch (err) {
+    flashBoard("Lost contact with the reporter - " + failure.toLowerCase(), "danger");
+    await loadBoard();
+    return null;
+  }
+}
+
+async function addTask(event) {
+  event.preventDefault();
+  const textBox = $("taskText");
+  const text = textBox.value.trim();
+  if (!text) {
+    flashBoard("The task cannot be empty", "danger");
+    textBox.focus();
+    return;
+  }
+  const out = await boardCall(
+    "/api/tasks/add",
+    {
+      date: $("taskDate").value,
+      project: $("taskProject").value.trim(),
+      text: text,
+    },
+    "The task was not added"
+  );
+  if (out) {
+    // Only the text clears.  Tasks arrive in runs under one day and one
+    // project, so those two boxes are left exactly where they were.
+    textBox.value = "";
+    flashBoard("Task added", "success");
+  }
+  textBox.focus();
+}
+
+async function toggleTask(task, done) {
+  const out = await boardCall(
+    "/api/tasks/update",
+    { id: task.id, done: done },
+    "The tick was not saved"
+  );
+  if (out) {
+    flashBoard(
+      done ? "Ticked - ready to file" : "Unticked",
+      done ? "success" : null
+    );
+  }
+}
+
+async function deleteTask(task) {
+  const preview = task.text.length > 60 ? task.text.slice(0, 57) + "..." : task.text;
+  if (!confirm("Delete this task?\n\n" + preview + "\n\nThis cannot be undone.")) return;
+  const out = await boardCall(
+    "/api/tasks/delete",
+    { id: task.id },
+    "Nothing was deleted"
+  );
+  if (out) flashBoard("Task deleted", "success");
+}
+
+async function clearFiled() {
+  const filed = boardCounts.filed || 0;
+  if (!filed) { flashBoard("Nothing filed to clear", "warn"); return; }
+  if (!confirm(
+    "Remove " + filed + " filed task" + (filed === 1 ? "" : "s") + " from the board?\n\n" +
+    "The reports they were written into are not touched."
+  )) return;
+  const out = await boardCall("/api/tasks/clear-filed", {}, "Nothing was cleared");
+  if (out) flashBoard("Cleared " + out.removed + " filed task(s)", "success");
+}
+
+/* ----------------------------------------------------------------- task edit */
+
+function openTaskEdit(id) {
+  const task = boardTasks.find((item) => item.id === id);
+  if (!task) return;
+  editingTaskId = id;
+  $("tDate").value = task.date;
+  $("tProject").value = task.project;
+  $("tText").value = task.text;
+  $("tError").textContent = "";
+  openModal("taskEditBackdrop");
+  $("tText").focus();
+}
+
+async function saveTaskEdit() {
+  if (editingTaskId === null) return;
+  const error = $("tError");
+  const text = $("tText").value.trim();
+  if (!text) { error.textContent = "The task cannot be empty."; return; }
+  if (text.length > CFG.maxTaskLength) {
+    error.textContent =
+      "Task is too long (" + text.length + " chars). Limit is " + CFG.maxTaskLength + ".";
+    return;
+  }
+  error.textContent = "";
+
+  const changes = {
+    id: editingTaskId,
+    project: $("tProject").value.trim(),
+    text: text,
+  };
+  // A blank date means "today" when adding a task, which is not what clearing
+  // this box should do - leave the day where it is instead.
+  const when = $("tDate").value;
+  if (when) changes.date = when;
+
+  try {
+    const out = await api("/api/tasks/update", changes);
+    if (!out.ok) { error.textContent = out.message || "Could not save the task."; return; }
+  } catch (err) {
+    error.textContent = "Lost contact with the reporter. Nothing was changed.";
+    return;
+  }
+
+  closeModal("taskEditBackdrop");
+  editingTaskId = null;
+  await loadBoard();
+  flashBoard("Task updated", "success");
+}
+
+/* --------------------------------------------------------------- the filing */
+
+let workbookLocked = false;
+
+async function startFiling() {
+  try {
+    const out = await api("/api/tasks/preview");
+    previewGroups = out.groups || [];
+    workbookLocked = Boolean(out.workbookOpen);
+  } catch (err) {
+    flashBoard("Lost contact with the reporter", "danger");
+    return;
+  }
+  if (!previewGroups.length) {
+    flashBoard("Nothing to file - tick the tasks you finished first", "warn");
+    await loadBoard();
+    return;
+  }
+  renderPreview();
+  openModal("previewBackdrop");
+}
+
+function renderPreview() {
+  const rows = previewGroups.length;
+  const tasks = previewGroups.reduce((sum, group) => sum + group.taskCount, 0);
+  $("previewCount").textContent =
+    tasks + (tasks === 1 ? " task" : " tasks") + " → " +
+    rows + (rows === 1 ? " report row" : " report rows");
+
+  // Excel holding the workbook is worth saying before the button is pressed,
+  // not after: the rows go to the queue instead of the sheet.
+  const locked = $("previewLocked");
+  locked.classList.toggle("hidden", !workbookLocked);
+  locked.textContent = workbookLocked
+    ? "The workbook is open in Excel. These rows will be kept in the pending " +
+      "file and merged in automatically once you close it - nothing is lost, " +
+      "but they will not appear in the sheet until then."
+    : "";
+  $("previewConfirm").textContent = workbookLocked ? "Queue for the Workbook" : "Write to Workbook";
+
+  const wrap = $("previewWrap");
+  wrap.innerHTML = "";
+
+  for (const group of previewGroups) {
+    const node = el("div", "pv-group");
+
+    const head = el("div", "pv-head");
+    head.appendChild(el("span", "pv-when", group.timestamp));
+    const over = group.length > CFG.maxCell;
+    head.appendChild(
+      el(
+        "span",
+        "pv-note" + (over ? " pv-warn" : ""),
+        group.taskCount + " task" + (group.taskCount === 1 ? "" : "s") +
+          " · " + group.length + " chars" +
+          (over ? " · too long for one cell" : "")
+      )
+    );
+    node.appendChild(head);
+
+    node.appendChild(el("pre", "pv-body", group.text));
+    wrap.appendChild(node);
+  }
+}
+
+async function confirmFiling() {
+  const button = $("previewConfirm");
+  button.disabled = true;
+  let out;
+  try {
+    // Recomputed server-side rather than trusting the preview, so whatever is
+    // ticked at this moment is what gets written.
+    out = await api("/api/tasks/file", {});
+  } catch (err) {
+    // The dialog stays up with the preview intact, so the write can be retried.
+    button.disabled = false;
+    alert("Lost contact with the reporter. Nothing was filed.");
+    return;
+  }
+  button.disabled = false;
+
+  closeModal("previewBackdrop");
+  await loadBoard();
+
+  const written = out.written || [];
+  if (!written.length) {
+    flashBoard(out.message || "Nothing was filed", "danger");
+  } else {
+    const days = written.map((row) => row.dateLabel).join(", ");
+    flashBoard(
+      written.length + (written.length === 1 ? " report" : " reports") +
+        " filed for " + days + " · " + out.filedCount +
+        (out.filedCount === 1 ? " task" : " tasks") + " ✓",
+      out.queued ? "warn" : "success"
+    );
+  }
+
+  if (out.queued) {
+    alert(
+      "The workbook could not be written:\n" + CFG.workbook + "\n\n" +
+      "It is probably open in Excel. The report was kept in\n" +
+      CFG.pendingFile + "\n\nand will be merged in automatically once the file " +
+      "is free. The tasks are marked filed, so they will not be written twice."
+    );
+  }
+  for (const failure of out.failed || []) {
+    alert("Could not file " + failure.dateLabel + ":\n\n" + failure.message);
+  }
+}
+
+/* ------------------------------------------------------------ view switching */
+
+function focusView() {
+  if (currentView === "board") $("taskText").focus();
+  else editor.focus();
+}
+
+function setView(name) {
+  currentView = name === "board" ? "board" : "report";
+  const board = currentView === "board";
+  $("reportView").classList.toggle("hidden", board);
+  $("boardView").classList.toggle("hidden", !board);
+  $("tabReport").classList.toggle("is-on", !board);
+  $("tabBoard").classList.toggle("is-on", board);
+  try { localStorage.setItem("taskReporterView", currentView); } catch (err) { /* private mode */ }
+  if (board) loadBoard();
+  focusView();
+}
+
 /* ------------------------------------------------------------------ wire-up */
 
 saveBtn.addEventListener("click", saveReport);
@@ -2252,6 +3973,28 @@ editor.addEventListener("input", updateCounter);
 $("historyBtn").addEventListener("click", openHistory);
 $("helpBtn").addEventListener("click", () => openModal("helpBackdrop"));
 $("editSave").addEventListener("click", saveEdit);
+
+$("tabReport").addEventListener("click", () => setView("report"));
+$("tabBoard").addEventListener("click", () => setView("board"));
+$("composer").addEventListener("submit", addTask);
+$("fileBtn").addEventListener("click", startFiling);
+$("clearFiledBtn").addEventListener("click", clearFiled);
+$("previewConfirm").addEventListener("click", confirmFiling);
+$("tSave").addEventListener("click", saveTaskEdit);
+attachProjectCombo(
+  $("taskProject"), $("taskProjectPanel"), $("taskProjectCaret"),
+  // Enter in the composer's project box moves on to the task itself.
+  () => $("taskText").focus()
+);
+attachProjectCombo(
+  $("tProject"), $("tProjectPanel"), $("tProjectCaret"),
+  () => $("tText").focus()
+);
+
+$("showFiled").addEventListener("change", (event) => {
+  showFiledTasks = event.target.checked;
+  renderBoard();
+});
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && openStack.length) {
@@ -2262,13 +4005,26 @@ document.addEventListener("keydown", (event) => {
   const accel = event.ctrlKey || event.metaKey;
   if (accel && event.key === "Enter") {
     event.preventDefault();
-    if (openStack[openStack.length - 1] === "editBackdrop") saveEdit();
-    else if (!openStack.length) saveReport();
+    const top = openStack[openStack.length - 1];
+    if (top === "editBackdrop") saveEdit();
+    else if (top === "taskEditBackdrop") saveTaskEdit();
+    else if (top === "previewBackdrop") confirmFiling();
+    else if (!openStack.length) {
+      // Same meaning on both surfaces: commit what is in front of you.
+      if (currentView === "board") startFiling();
+      else saveReport();
+    }
     return;
   }
   if (accel && !event.shiftKey && (event.key === "h" || event.key === "H")) {
     event.preventDefault();
     if (!openStack.includes("historyBackdrop")) openHistory();
+    return;
+  }
+  if (accel && !event.shiftKey && (event.key === "b" || event.key === "B")) {
+    if (openStack.length) return;
+    event.preventDefault();
+    setView(currentView === "board" ? "report" : "board");
   }
 });
 
@@ -2283,7 +4039,12 @@ function tickClock() {
 tickClock();
 setInterval(tickClock, 1000);
 updateCounter();
-editor.focus();
+
+$("taskDate").value = isoToday();
+let startView = "report";
+try { startView = localStorage.getItem("taskReporterView") || "report"; } catch (err) { /* private mode */ }
+setView(startView);
+
 ping();
 setInterval(ping, CFG.pingSeconds * 1000);
 </script>
@@ -2471,6 +4232,19 @@ class _ReporterRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"reports": _web_list_reports()})
             return
 
+        if path == "/api/tasks":
+            self._send_json(_web_board_state())
+            return
+
+        if path == "/api/tasks/preview":
+            self._send_json(
+                {
+                    "groups": preview_filing(),
+                    "workbookOpen": workbook_is_open_in_excel(),
+                }
+            )
+            return
+
         self._send_text(404, "not found")
 
     def do_HEAD(self):
@@ -2506,6 +4280,8 @@ class _ReporterRequestHandler(http.server.BaseHTTPRequestHandler):
                     "shuttingDown": session.is_shutting_down(),
                     "reason": session.reason,
                     "queued": pending_report_count(),
+                    "workbookOpen": workbook_is_open_in_excel(),
+                    "boardRevision": board_revision(),
                 }
             )
             return
@@ -2522,6 +4298,30 @@ class _ReporterRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(_web_delete_report(payload))
             return
 
+        if path == "/api/tasks/add":
+            self._send_json(_web_add_task(payload))
+            return
+
+        if path == "/api/tasks/update":
+            self._send_json(_web_update_task(payload))
+            return
+
+        if path == "/api/tasks/delete":
+            self._send_json(_web_delete_task(payload))
+            return
+
+        if path == "/api/projects/forget":
+            self._send_json(_web_forget_project(payload))
+            return
+
+        if path == "/api/tasks/clear-filed":
+            self._send_json({"ok": True, "removed": delete_filed_tasks()})
+            return
+
+        if path == "/api/tasks/file":
+            self._send_json(file_checked_tasks(self._state.session, origin="browser"))
+            return
+
         self._send_text(404, "not found")
 
 
@@ -2536,11 +4336,18 @@ def _render_web_page(token: str) -> bytes:
         "token": token,
         "clientId": secrets.token_urlsafe(9),
         "maxLength": MAX_REPORT_LENGTH,
+        "maxTaskLength": MAX_TASK_LENGTH,
+        "maxCell": EXCEL_MAX_CELL,
         "pingSeconds": 3,
         "workbook": EXCEL_FILE_PATH,
         "pendingFile": PENDING_FILE_PATH,
     }
-    page = WEB_PAGE_TEMPLATE.replace("%%CONFIG%%", json.dumps(config))
+    page = (
+        WEB_PAGE_TEMPLATE
+        .replace("%%CONFIG%%", json.dumps(config))
+        .replace("%%MAXTASK%%", str(MAX_TASK_LENGTH))
+        .replace("%%MAXPROJECT%%", str(MAX_PROJECT_LENGTH))
+    )
     return page.encode("utf-8")
 
 
@@ -2575,6 +4382,80 @@ def _web_save_report(session: "ReporterSession", payload: dict) -> dict:
     session.record_save("browser", timestamp)
     print(f"  [ok] Filed from the browser at {timestamp} -> {EXCEL_FILE_NAME}")
     return {"ok": True, "timestamp": timestamp, "queued": False}
+
+
+def _web_board_state() -> dict:
+    return {
+        "tasks": load_tasks(),
+        "projects": known_projects(),
+        "counts": board_counts(),
+        "revision": board_revision(),
+    }
+
+
+def _web_add_task(payload: dict) -> dict:
+    try:
+        task = add_task(
+            payload.get("date"),
+            str(payload.get("project") or ""),
+            str(payload.get("text") or ""),
+        )
+    except ValueError as exc:
+        return {"ok": False, "message": str(exc)}
+    except OSError as exc:
+        return {"ok": False, "message": f"Could not write the task board: {exc}"}
+    return {"ok": True, "task": task}
+
+
+def _web_update_task(payload: dict) -> dict:
+    task_id = str(payload.get("id") or "").strip()
+    if not task_id:
+        return {"ok": False, "message": "That task could not be identified."}
+
+    # Only the keys the page actually sent are applied, so ticking a box cannot
+    # blank the text and editing the text cannot untick the box.
+    changes = {}
+    for key in ("text", "project", "date", "done"):
+        if key in payload:
+            changes[key] = payload[key]
+    if not changes:
+        return {"ok": False, "message": "Nothing to change."}
+
+    try:
+        task = update_task(task_id, **changes)
+    except ValueError as exc:
+        return {"ok": False, "message": str(exc)}
+    except KeyError:
+        return {"ok": False, "message": "That task no longer exists."}
+    except OSError as exc:
+        return {"ok": False, "message": f"Could not write the task board: {exc}"}
+    return {"ok": True, "task": task}
+
+
+def _web_forget_project(payload: dict) -> dict:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return {"ok": False, "message": "No project name was given."}
+    try:
+        forgotten = forget_project(name)
+    except OSError as exc:
+        return {"ok": False, "message": f"Could not write the task board: {exc}"}
+    if not forgotten:
+        return {"ok": False, "message": f"'{name}' was not in the list."}
+    return {"ok": True}
+
+
+def _web_delete_task(payload: dict) -> dict:
+    task_id = str(payload.get("id") or "").strip()
+    if not task_id:
+        return {"ok": False, "message": "That task could not be identified."}
+    try:
+        removed = delete_task(task_id)
+    except OSError as exc:
+        return {"ok": False, "message": f"Could not write the task board: {exc}"}
+    if not removed:
+        return {"ok": False, "message": "That task no longer exists."}
+    return {"ok": True}
 
 
 def _web_row_index(payload: dict):
@@ -2786,6 +4667,7 @@ CLI_PROMPT = "report> "
 CLI_COMMANDS = [
     (":m  /  :multi", "write a multi-line report (finish with a lone '.')"),
     (":l  /  :list", "show the 10 most recent reports"),
+    (":t  /  :tasks", "the task board - see the board commands below"),
     (":p  /  :path", "print the workbook path"),
     (":h  /  :help", "show this help"),
     (":q  /  :quit", "close the session (Ctrl+C and Ctrl+D do the same)"),
@@ -2797,6 +4679,9 @@ def _print_cli_help():
     print("  Use \\n inside the line for a manual line break.")
     for keys, desc in CLI_COMMANDS:
         print(f"    {keys:<16} {desc}")
+    print("  Task board:")
+    for keys, desc in CLI_BOARD_COMMANDS:
+        print(f"    {keys:<22} {desc}")
 
 
 def _print_cli_banner(dual: bool):
@@ -2811,9 +4696,18 @@ def _print_cli_banner(dual: bool):
     else:
         print("  This console is the only surface for this session.")
     print(f"  Workbook: {EXCEL_FILE_PATH}")
+    counts = board_counts()
+    if counts["total"]:
+        print(
+            f"  Task board: {counts['open']} open, {counts['ready']} ticked "
+            f"and ready to file  (':t' to list)"
+        )
     queued = pending_report_count()
     if queued:
         print(f"  {queued} report(s) waiting to be merged into the workbook.")
+    if workbook_is_open_in_excel():
+        print("  NOTE: the workbook is open in Excel. Reports are queued until")
+        print("        you close it, rather than being written and then lost.")
     print("-" * 68)
     _print_cli_help()
     print("-" * 68)
@@ -2873,6 +4767,372 @@ def _read_multiline_report() -> str:
     return "\n".join(lines).strip()
 
 
+# ---------------------------------------------------------------------------
+# The task board from the terminal
+# ---------------------------------------------------------------------------
+#
+# Same board, same file, same filing - just typed instead of clicked, so a
+# session that never opened a browser is not a session without a board.  The
+# add syntax deliberately mirrors the task list itself:
+#
+#   :t add [onex-academy] fix the links comparison issue
+#   :t add 21.08.2026 [onex-academy] fix the links comparison issue
+
+CLI_BOARD_COMMANDS = [
+    (":t  /  :tasks", "show the task board"),
+    (":t all", "show it including tasks already filed"),
+    (":t add [proj] TEXT", "add a task to today ([proj] and a leading date"),
+    ("", "are both optional: :t add 21.08.2026 [proj] TEXT)"),
+    (":t x N...", "tick tasks by number (also :t done N)"),
+    (":t o N...", "untick tasks by number (also :t open N)"),
+    (":t rm N...", "delete tasks by number"),
+    (":t file", "write every ticked task into the workbook"),
+    (":t clear", "drop already-filed tasks off the board"),
+    (":t projects", "list the remembered project names"),
+    (":t forget NAME", "drop a project name off that list"),
+]
+
+# Numbers refer to the listing the console last printed, so ":t x 3" always
+# means the line the user is looking at, whatever has changed since.
+_CLI_LISTING = []
+
+_CLI_DATE_TOKEN = re.compile(r"^\d{1,4}[./-]\d{1,2}[./-]\d{1,4}$")
+
+
+def _relative_day_text(date_iso: str) -> str:
+    try:
+        day = datetime.strptime(date_iso, DATE_STORE_FORMAT).date()
+    except (ValueError, TypeError):
+        return ""
+    diff = (day - datetime.now().date()).days
+    if diff == 0:
+        return "today"
+    if diff == -1:
+        return "yesterday"
+    if diff == 1:
+        return "tomorrow"
+    name = day.strftime("%A")
+    if diff < 0:
+        return f"{name}, {-diff} days ago"
+    return f"{name}, in {diff} days"
+
+
+def _print_board(show_filed: bool = False):
+    """Print the board, and remember the numbering it used."""
+    global _CLI_LISTING
+
+    tasks = load_tasks()
+    counts = board_counts()
+
+    if not tasks:
+        print("  The task board is empty.")
+        print("  Add one with:  :t add [project] what needs doing")
+        _CLI_LISTING = []
+        return
+
+    shown = tasks if show_filed else [t for t in tasks if not t["filed_at"]]
+    hidden = len(tasks) - len(shown)
+
+    print(
+        f"  Task board - {counts['total']} task(s), {counts['open']} open, "
+        f"{counts['ready']} ticked and ready to file"
+    )
+    print("  " + "-" * 66)
+
+    _CLI_LISTING = []
+    if not shown:
+        print("  Everything on the board is filed.  ':t all' shows it anyway.")
+    else:
+        for date_iso, projects in group_by_day(shown):
+            day = [task for _name, group in projects for task in group]
+            done = sum(1 for task in day if task["done"])
+            when = _relative_day_text(date_iso)
+            print()
+            print(
+                f"  {display_date(date_iso)}"
+                + (f"  ({when})" if when else "")
+                + f"  -  {done} of {len(day)} done"
+            )
+            for name, group in projects:
+                print(f"    [{name}]" if name else "    (no project)")
+                for task in group:
+                    _CLI_LISTING.append(task["id"])
+                    text = " ".join(task["text"].split())
+                    suffix = "  (filed)" if task["filed_at"] else ""
+                    room = 58 - len(suffix)
+                    if len(text) > room:
+                        text = text[: room - 3] + "..."
+                    mark = "x" if task["done"] else " "
+                    print(f"      {len(_CLI_LISTING):>3}. [{mark}] {text}{suffix}")
+
+    print()
+    print("  " + "-" * 66)
+    if hidden:
+        print(f"  {hidden} filed task(s) hidden - ':t all' shows them, "
+              "':t clear' removes them.")
+    if counts["ready"]:
+        rows = len(preview_filing())
+        print(
+            f"  {counts['ready']} ticked -> ':t file' writes "
+            f"{rows} report row(s)."
+        )
+    else:
+        print("  Nothing ticked yet.  Tick with ':t x N'.")
+
+
+def _print_projects():
+    names = known_projects()
+    if not names:
+        print("  No project names remembered yet.")
+        print("  One is recorded the first time you use it:")
+        print("    :t add [onex-academy] fix the links comparison issue")
+        return
+    print(f"  {len(names)} project name(s), most recently used first:")
+    for index, name in enumerate(names, 1):
+        print(f"    {index:>3}. [{name}]")
+    print("  ':t forget NAME' drops one off the list.")
+
+
+def _cli_forget_project(name: str):
+    name = name.strip()
+    # The bracketed form is how these are written everywhere else, so accept it.
+    if name.startswith("[") and name.endswith("]"):
+        name = name[1:-1].strip()
+    if not name:
+        print("  [!] Which one?  e.g.  :t forget onex-academy")
+        return
+    try:
+        forgotten = forget_project(name)
+    except OSError as exc:
+        print(f"  [!] Could not write the task board: {exc}")
+        return
+    if forgotten:
+        print(f"  [ok] '{name}' removed from the project list.")
+        print("       Tasks already using it keep it.")
+    else:
+        print(f"  [!] '{name}' is not in the list.  ':t projects' shows it.")
+
+
+def _resolve_task_numbers(words: list):
+    """Turn the numbers the user typed into task ids.  Returns (ids, bad)."""
+    if not _CLI_LISTING:
+        _print_board()
+        print()
+    ids = []
+    bad = []
+    for word in words:
+        try:
+            number = int(word)
+        except ValueError:
+            bad.append(word)
+            continue
+        if 1 <= number <= len(_CLI_LISTING):
+            ids.append(_CLI_LISTING[number - 1])
+        else:
+            bad.append(word)
+    return ids, bad
+
+
+def parse_task_line(rest: str):
+    """`[21.08.2026] [project] the task text` -> (date, project, text).
+
+    Both prefixes are optional and in that order, which is how the task list
+    writes them: the day heading, then the project in brackets, then the task.
+    """
+    date = None
+    project = ""
+    text = rest.strip()
+
+    head = text.split(None, 1)
+    if head and _CLI_DATE_TOKEN.match(head[0]):
+        date = head[0]
+        text = head[1].strip() if len(head) > 1 else ""
+
+    if text.startswith("["):
+        close = text.find("]")
+        if close != -1:
+            project = text[1:close].strip()
+            text = text[close + 1:].strip()
+
+    return date, project, text
+
+
+def _cli_add_task(rest: str) -> bool:
+    date, project, text = parse_task_line(rest)
+    if not text:
+        print("  [!] Nothing to add.")
+        print("      Try:  :t add [onex-academy] fix the links comparison issue")
+        return False
+    try:
+        task = add_task(date or today_iso(), project, text)
+    except ValueError as exc:
+        print(f"  [!] {exc}")
+        return False
+    except OSError as exc:
+        print(f"  [!] Could not write the task board: {exc}")
+        return False
+    where = f"[{task['project']}] " if task["project"] else ""
+    print(f"  [ok] Added to {display_date(task['date'])} {where}-> {TASKS_FILE_NAME}")
+    return True
+
+
+def _cli_mark_tasks(words: list, done: bool):
+    if not words:
+        print(f"  [!] Which one?  e.g.  :t {'x' if done else 'o'} 3   "
+              f"or  :t {'x' if done else 'o'} 3 4 5")
+        return
+    ids, bad = _resolve_task_numbers(words)
+    for word in bad:
+        print(f"  [!] '{word}' is not a task number from the list above.")
+
+    # A filed task is already a row in the workbook, so its box means nothing
+    # now - the browser greys the same box out for the same reason.
+    filed = {task["id"] for task in load_tasks() if task["filed_at"]}
+    skipped = [task_id for task_id in ids if task_id in filed]
+    ids = [task_id for task_id in ids if task_id not in filed]
+    if skipped:
+        print(f"  [!] Skipped {len(skipped)} already-filed task(s) - they are "
+              "in the workbook already.")
+
+    changed = 0
+    for task_id in ids:
+        try:
+            update_task(task_id, done=done)
+            changed += 1
+        except (KeyError, ValueError, OSError) as exc:
+            print(f"  [!] {exc}")
+    if changed:
+        verb = "Ticked" if done else "Unticked"
+        ready = board_counts()["ready"]
+        print(f"  [ok] {verb} {changed} task(s). {ready} ready to file.")
+
+
+def _cli_remove_tasks(words: list):
+    if not words:
+        print("  [!] Which one?  e.g.  :t rm 3   or  :t rm 3 4 5")
+        return
+    ids, bad = _resolve_task_numbers(words)
+    for word in bad:
+        print(f"  [!] '{word}' is not a task number from the list above.")
+    removed = 0
+    for task_id in ids:
+        try:
+            if delete_task(task_id):
+                removed += 1
+        except OSError as exc:
+            print(f"  [!] Could not write the task board: {exc}")
+    if removed:
+        print(f"  [ok] Deleted {removed} task(s).")
+        # The numbering just moved, so the remembered listing is now a lie.
+        _CLI_LISTING.clear()
+
+
+def _print_filing_preview(groups: list):
+    print(
+        f"  {sum(g['taskCount'] for g in groups)} ticked task(s) "
+        f"-> {len(groups)} report row(s):"
+    )
+    for group in groups:
+        print()
+        print(f"    {group['timestamp']}   ({group['taskCount']} task(s), "
+              f"{group['length']} chars)")
+        for line in group["text"].splitlines():
+            print(f"      | {line}" if line else "      |")
+
+
+def _report_filing_result(result: dict):
+    for row in result.get("written") or []:
+        status = "queued (workbook locked)" if row["queued"] else "filed"
+        print(
+            f"  [{'~' if row['queued'] else 'ok'}] {row['dateLabel']} "
+            f"{status} at {row['timestamp']} ({row['taskCount']} task(s))"
+        )
+    for failure in result.get("failed") or []:
+        print(f"  [!] {failure['dateLabel']}: {failure['message']}")
+    if result.get("queued"):
+        print(f"      Queued in {os.path.basename(PENDING_FILE_PATH)}; it merges")
+        print("      itself in once Excel releases the file.")
+    if not result.get("written"):
+        message = result.get("message")
+        if message:
+            print(f"  [!] {message}")
+
+
+def cli_file_checked_tasks(session=None, confirm: bool = True) -> bool:
+    groups = preview_filing()
+    if not groups:
+        print("  [!] Nothing ticked.  Tick what you finished with ':t x N'.")
+        return False
+
+    _print_filing_preview(groups)
+    print()
+    if workbook_is_open_in_excel():
+        print(f"  NOTE: {EXCEL_FILE_NAME} is open in Excel, so these go to the")
+        print("        pending queue and merge in once you close it.")
+        print()
+
+    if confirm:
+        try:
+            answer = input(f"  Write {len(groups)} row(s) into "
+                           f"{EXCEL_FILE_NAME}? [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            answer = ""
+        if answer not in ("y", "yes"):
+            print("  Nothing was written.")
+            return False
+
+    result = file_checked_tasks(session, origin="terminal")
+    _report_filing_result(result)
+    _CLI_LISTING.clear()
+    return bool(result.get("written"))
+
+
+def handle_task_command(rest: str, session=None):
+    """Everything after ':t'.  An empty rest just prints the board."""
+    words = rest.split()
+    if not words:
+        _print_board()
+        return
+
+    action = words[0].lower()
+    tail = rest[len(words[0]):].strip()
+
+    if action in ("all", "-a", "--all"):
+        _print_board(show_filed=True)
+    elif action in ("add", "a", "+"):
+        if _cli_add_task(tail):
+            _CLI_LISTING.clear()
+    elif action in ("x", "done", "tick"):
+        _cli_mark_tasks(words[1:], True)
+    elif action in ("o", "open", "undone", "untick"):
+        _cli_mark_tasks(words[1:], False)
+    elif action in ("rm", "del", "delete"):
+        _cli_remove_tasks(words[1:])
+    elif action in ("projects", "proj"):
+        _print_projects()
+    elif action == "forget":
+        _cli_forget_project(tail)
+    elif action == "file":
+        cli_file_checked_tasks(session)
+    elif action == "clear":
+        try:
+            removed = delete_filed_tasks()
+        except OSError as exc:
+            print(f"  [!] Could not write the task board: {exc}")
+            return
+        print(
+            f"  [ok] Dropped {removed} filed task(s) off the board."
+            if removed
+            else "  Nothing filed to clear."
+        )
+        _CLI_LISTING.clear()
+    else:
+        print(f"  [!] ':t {action}' is not a board command.")
+        for keys, desc in CLI_BOARD_COMMANDS:
+            print(f"    {keys:<22} {desc}")
+
+
 def cli_console_loop(session: ReporterSession, dual: bool):
     """Read reports from the terminal until the session ends."""
     session.cli_active = True
@@ -2906,6 +5166,12 @@ def cli_console_loop(session: ReporterSession, dual: bool):
             continue
         if lowered in (":l", ":list"):
             _print_recent_reports()
+            continue
+        if lowered in (":t", ":tasks", ":board") or lowered.startswith(
+            (":t ", ":tasks ", ":board ")
+        ):
+            handle_task_command(command.split(None, 1)[1] if " " in command else "",
+                                session)
             continue
         if lowered in (":p", ":path"):
             print(f"  {EXCEL_FILE_PATH}")
@@ -3222,6 +5488,9 @@ def _print_session_summary(session: ReporterSession):
     queued = pending_report_count()
     if queued:
         print(f"{queued} report(s) still queued for the workbook.")
+    ready = board_counts()["ready"]
+    if ready:
+        print(f"{ready} ticked task(s) still waiting on the board.")
 
 
 def _doctor_web_section() -> bool:
@@ -3315,6 +5584,14 @@ def run_doctor(forced_platform: str = None) -> int:
     print(f"  workbook           : {EXCEL_FILE_PATH}")
     print(f"  workbook exists    : {os.path.exists(EXCEL_FILE_PATH)}")
     print(f"  queued reports     : {pending_report_count()}")
+    print(f"  open in Excel now  : {workbook_is_open_in_excel()}")
+    print(f"  task board         : {TASKS_FILE_PATH}")
+    _counts = board_counts()
+    print(
+        f"  board tasks        : {_counts['total']} "
+        f"({_counts['open']} open, {_counts['ready']} ready to file, "
+        f"{_counts['filed']} filed)"
+    )
     print(f"  running under WSL  : {is_wsl()}")
     print(f"  windows interop    : {bool(shutil.which('powershell.exe'))}")
     print(f"  PySide6 importable : {GUI_AVAILABLE}")
@@ -3395,6 +5672,30 @@ def main(argv: list) -> int:
         help="Print recent reports and exit",
     )
     parser.add_argument(
+        "--board",
+        action="store_true",
+        help="Print the task board and exit",
+    )
+    parser.add_argument(
+        "-t",
+        "--task",
+        metavar="TEXT",
+        help=(
+            "Add TEXT to the task board and exit. A leading date and a "
+            "[project] prefix are both optional, e.g. "
+            "-t '21.08.2026 [onex-academy] fix the links'"
+        ),
+    )
+    parser.add_argument(
+        "--file-checked",
+        dest="file_checked",
+        action="store_true",
+        help=(
+            "Write every ticked task on the board into the workbook (one row "
+            "per day, grouped by project) and exit"
+        ),
+    )
+    parser.add_argument(
         "--platform",
         metavar="NAME",
         help=(
@@ -3422,8 +5723,19 @@ def main(argv: list) -> int:
         _print_recent_reports(limit=50)
         return 0
 
+    if args.board:
+        _print_board(show_filed=True)
+        return 0
+
     session = ReporterSession()
     _install_signal_handlers(session)
+
+    if args.task is not None:
+        return 0 if _cli_add_task(args.task) else 1
+
+    if args.file_checked:
+        # No prompt here: asking a script a question is how a cron job hangs.
+        return 0 if cli_file_checked_tasks(session, confirm=False) else 1
 
     if args.report is not None:
         return 0 if save_report_text(args.report.strip(), "argument", session) else 1
@@ -3515,4 +5827,12 @@ def main(argv: list) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except BrokenPipeError:
+        # `--board | head` closes the pipe as soon as it has enough lines, which
+        # is not a failure.  Point the fd at devnull first, or the interpreter's
+        # own flush on the way out raises the same thing again and prints a
+        # traceback after we have already decided all is well.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        os._exit(0)
