@@ -1,6 +1,25 @@
-# task_reporter
+# Task Reporter
+
+[![Install](https://img.shields.io/badge/install-one%20double--click-2b8a3e)](INSTALL.md)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20WSL-0078d6)](#running-it)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab)](INSTALL.md)
+[![Output](https://img.shields.io/badge/output-.xlsx-217346)](#the-workbook)
 
 Files task reports into `task_reports.xlsx` with an automatic timestamp.
+
+> ### Install it in one double-click
+>
+> | Your machine | What to do |
+> |---|---|
+> | **Windows** | **double-click `Install.bat`** — it also builds `TaskReporter.exe`, the app in a single file, and puts it on your Desktop |
+> | **Linux / macOS / WSL** | `./install.sh` |
+>
+> The installer finds a usable Python (and offers to fetch one if there is
+> none), sets up its own private environment, runs the app to prove it works,
+> builds the exe, and makes the shortcuts. Anything that goes wrong is
+> explained in plain English, with the fix — including the case where the app
+> is open and its exe therefore cannot be replaced.
+> Details and troubleshooting: **[INSTALL.md](INSTALL.md)**.
 
 On Windows it is a **desktop app**: double-click *Task Reporter*, a window
 opens, and there is no terminal and no browser tab to keep track of. See
@@ -70,7 +89,11 @@ history panel applies unchanged.
 
 ### Building it
 
-Two steps, both from Windows, and neither needs WSL:
+**Just double-click `Install.bat`** — it finds a Python, makes the build
+environment, builds the exe and creates the shortcuts, and explains anything
+that goes wrong. See [INSTALL.md](INSTALL.md).
+
+The two original steps still work if you prefer them, and neither needs WSL:
 
 ```
 windows\build.bat              # produces TaskReporter.exe in this folder

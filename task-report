@@ -17,6 +17,7 @@ PY="${TASK_REPORT_PYTHON:-}"
 if [ -z "$PY" ] || [ ! -x "$PY" ]; then
     PY=""
     for candidate in \
+        "$DIR/.venv/bin/python" \
         /root/miniconda3/envs/movs/bin/python \
         "$HOME/miniconda3/envs/movs/bin/python" \
         "$(command -v python3 2>/dev/null)" \
@@ -31,7 +32,18 @@ fi
 
 if [ -z "$PY" ]; then
     echo "Task Reporter: no usable Python interpreter found." >&2
-    echo "Set TASK_REPORT_PYTHON to the interpreter you want to use." >&2
+    echo "" >&2
+    echo "  Run the installer first - it makes one in .venv/ and explains" >&2
+    echo "  anything that goes wrong:" >&2
+    echo "      ./install.sh" >&2
+    echo "" >&2
+    echo "  Or point at your own interpreter:  TASK_REPORT_PYTHON=/path/to/python" >&2
+    exit 1
+fi
+
+if ! "$PY" -c 'import openpyxl' >/dev/null 2>&1; then
+    echo "Task Reporter: this Python has no openpyxl, so the workbook cannot be" >&2
+    echo "written. Run ./install.sh - it sets up a .venv/ with everything." >&2
     exit 1
 fi
 

@@ -21,3 +21,12 @@ windows/project_home.txt
 .task_reporter_app.log
 .task_reporter_app.log.1
 .task_reporter_app.lock
+
+# installer output
+install.log
+install.log.old
+Start Task Reporter.bat
+.venv/
+
+# Windows "downloaded from the internet" markers
+*:Zone.Identifier
