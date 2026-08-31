@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 9,
+  "seq": 14,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -100,6 +100,61 @@
       "created_at": "28/08/2026 15:03:43",
       "done_at": "28/08/2026 15:03:47",
       "filed_at": "28/08/2026 15:03:56"
+    },
+    {
+      "id": "rOdrsuLLLzo",
+      "seq": 10,
+      "date": "2026-08-28",
+      "project": "Buy For Me",
+      "text": "Make a telegram bot for every updated or added row.",
+      "done": true,
+      "created_at": "28/08/2026 15:40:49",
+      "done_at": "28/08/2026 15:41:10",
+      "filed_at": "28/08/2026 15:41:14"
+    },
+    {
+      "id": "EtBCvIA7vIY",
+      "seq": 11,
+      "date": "2026-08-28",
+      "project": "Logistics",
+      "text": "Make the correct xml file out of xlsx and csv files",
+      "done": true,
+      "created_at": "28/08/2026 15:40:57",
+      "done_at": "28/08/2026 15:41:11",
+      "filed_at": "28/08/2026 15:41:14"
+    },
+    {
+      "id": "pIGqbLBjPqw",
+      "seq": 12,
+      "date": "2026-08-28",
+      "project": "Buy For Me",
+      "text": "add the clickable button for the tracking code reveal",
+      "done": true,
+      "created_at": "28/08/2026 15:41:08",
+      "done_at": "28/08/2026 15:41:11",
+      "filed_at": "28/08/2026 15:41:14"
+    },
+    {
+      "id": "bGL-Ro45Bbk",
+      "seq": 13,
+      "date": "2026-08-31",
+      "project": "Logistics",
+      "text": "make one file with correct structure out of 141 xml files and send, get approval",
+      "done": true,
+      "created_at": "31/08/2026 09:52:02",
+      "done_at": "31/08/2026 10:53:22",
+      "filed_at": "31/08/2026 10:53:30"
+    },
+    {
+      "id": "0RW0BNwhFP4",
+      "seq": 14,
+      "date": "2026-08-31",
+      "project": "Buy For Me",
+      "text": "make the telegram bor to show the tracking code revealer button also.",
+      "done": true,
+      "created_at": "31/08/2026 10:53:20",
+      "done_at": "31/08/2026 10:53:22",
+      "filed_at": "31/08/2026 10:53:30"
     }
   ],
   "projects": [

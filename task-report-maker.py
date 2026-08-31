@@ -58,6 +58,7 @@ import re
 import secrets
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -69,7 +70,49 @@ import webbrowser
 from collections import deque
 from datetime import datetime
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# True when running as the packaged Windows .exe rather than as a script.
+FROZEN = bool(getattr(sys, "frozen", False))
+
+
+def _resolve_base_dir() -> str:
+    """Where the workbook and the task board live.
+
+    As a script this is simply the folder holding this file.  Frozen into an
+    .exe it cannot be: PyInstaller unpacks the bundle into a temporary folder
+    that is deleted on exit, so `__file__` would put the workbook somewhere it
+    disappears from.  The exe therefore looks for the project the same way
+    task_reporter.bat does - the environment override first, then a folder that
+    actually holds the data, then the path recorded when the exe was built.
+    """
+    override = (os.environ.get("TASK_REPORT_DIR") or "").strip()
+    if override and os.path.isdir(override):
+        return os.path.abspath(override)
+
+    if not FROZEN:
+        return os.path.dirname(os.path.abspath(__file__))
+
+    candidates = [os.path.dirname(os.path.abspath(sys.executable))]
+
+    # Written into the bundle at build time - see windows/build.bat.
+    recorded = os.path.join(getattr(sys, "_MEIPASS", ""), "project_home.txt")
+    try:
+        with open(recorded, "r", encoding="utf-8") as handle:
+            home = handle.read().strip()
+        if home and os.path.isdir(home):
+            candidates.append(home)
+    except OSError:
+        pass
+
+    for candidate in candidates:
+        if os.path.isfile(os.path.join(candidate, "task_reports.xlsx")) or (
+            os.path.isfile(os.path.join(candidate, "task_board.json"))
+        ):
+            return candidate
+    # Nothing found yet: the first run creates the workbook beside the exe.
+    return candidates[-1]
+
+
+BASE_DIR = _resolve_base_dir()
 EXCEL_FILE_NAME = "task_reports.xlsx"
 EXCEL_FILE_PATH = os.path.join(BASE_DIR, EXCEL_FILE_NAME)
 # Reports land here when the workbook cannot be written (usually because it is
@@ -4068,6 +4111,18 @@ class WebSessionState:
         self._ever_connected = False
         self._page_served = False
         self._bye_at = None
+        # Set when a second launch asks the running window to come forward.
+        self._focus_requested = False
+
+    def request_focus(self):
+        with self._lock:
+            self._focus_requested = True
+
+    def take_focus_request(self) -> bool:
+        with self._lock:
+            wanted = self._focus_requested
+            self._focus_requested = False
+        return wanted
 
     def note_page_served(self):
         with self._lock:
@@ -4119,6 +4174,13 @@ class WebSessionState:
 class _ReporterHTTPServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
     state = None
+    # Windows lets a second socket bind a port that is already being listened
+    # on when SO_REUSEADDR is set, and then splits new connections between the
+    # two unpredictably.  Under WSL that is not hypothetical: wslrelay.exe
+    # mirrors every port bound inside the VM onto Windows, so a session running
+    # in WSL and the Windows app would otherwise fight over 8770 - and the
+    # window would load whichever answered first, token and all.
+    allow_reuse_address = os.name != "nt"
 
 
 class _ReporterRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -4255,6 +4317,13 @@ class _ReporterRequestHandler(http.server.BaseHTTPRequestHandler):
             return
 
         path = self._path()
+
+        if path == "/api/focus":
+            # A second launch of the desktop app: there is only ever one
+            # window, so the running one is brought forward instead.
+            self._state.request_focus()
+            self._send_json({"ok": True})
+            return
 
         if path == "/api/bye":
             # Sent by sendBeacon on tab close, so it carries no body.
@@ -4520,6 +4589,21 @@ def _web_delete_report(payload: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _port_is_answered(port: int) -> bool:
+    """True when something already accepts connections on this loopback port.
+
+    Checked before binding rather than after, because a bind that "succeeds"
+    alongside an existing listener is the failure that cannot be recovered
+    from: the connections are then split between the two servers.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.25)
+        try:
+            return probe.connect_ex((WEB_HOST, port)) == 0
+        except OSError:
+            return False
+
+
 def start_web_server(session: "ReporterSession", port_hint: int = None):
     """Bind the UI server.  Returns (server, state, error).
 
@@ -4535,6 +4619,11 @@ def start_web_server(session: "ReporterSession", port_hint: int = None):
 
     last_error = None
     for port in candidates:
+        if port and _port_is_answered(port):
+            # Something is already listening - very likely another Task
+            # Reporter session, whose page must not be handed our token.
+            last_error = OSError(f"port {port} is already in use")
+            continue
         try:
             server = _ReporterHTTPServer(
                 (WEB_HOST, port), _ReporterRequestHandler
@@ -5430,6 +5519,238 @@ def run_web(
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Desktop app - the Windows window
+# ---------------------------------------------------------------------------
+
+# The window is the same page as the browser UI, drawn inside the process that
+# serves it.  Nothing about the UI changes; what changes is that there is no
+# terminal to keep open and no browser tab to keep track of.
+#
+# Windows draws it with WebView2 (the Edge runtime, present on every supported
+# Windows install), so this is a native window with a native title bar and a
+# taskbar entry - not a browser in disguise.  The whole WSLg failure class the
+# Qt window suffered from is still avoided, because no X11, Wayland or
+# compositor is involved.
+
+APP_WINDOW_TITLE = "Task Reporter"
+APP_WINDOW_SIZE = (1080, 780)
+APP_WINDOW_MIN_SIZE = (720, 560)
+APP_BACKGROUND = "#0F1117"
+
+# Two files the app keeps beside the workbook.  The lock is how a second
+# launch finds the window that is already open; the log is where the output
+# that used to go to the terminal goes instead.
+APP_LOCK_PATH = os.path.join(BASE_DIR, ".task_reporter_app.lock")
+APP_LOG_PATH = os.path.join(BASE_DIR, ".task_reporter_app.log")
+APP_LOG_MAX_BYTES = 512 * 1024
+
+
+def app_storage_path() -> str:
+    """Where WebView2 keeps its profile, so localStorage survives a restart."""
+    root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return os.path.join(root, "TaskReporter", "webview")
+
+
+def start_app_log():
+    """Send stdout/stderr to a file, because a windowed app has neither.
+
+    PyInstaller's windowed build leaves sys.stdout as None, and this program
+    prints freely - so without this, the first print() anywhere would raise.
+    """
+    try:
+        if os.path.exists(APP_LOG_PATH) and os.path.getsize(APP_LOG_PATH) > APP_LOG_MAX_BYTES:
+            os.replace(APP_LOG_PATH, APP_LOG_PATH + ".1")
+    except OSError:
+        pass
+    try:
+        handle = open(APP_LOG_PATH, "a", encoding="utf-8", errors="replace", buffering=1)
+    except OSError:
+        handle = open(os.devnull, "w", encoding="utf-8")
+    sys.stdout = handle
+    sys.stderr = handle
+    # stdin is never read in app mode, but leaving it as None makes any stray
+    # input() raise something unhelpful instead of ending cleanly.
+    if sys.stdin is None:
+        try:
+            sys.stdin = open(os.devnull, "r", encoding="utf-8")
+        except OSError:
+            pass
+    print(f"\n=== {datetime.now().strftime(TIMESTAMP_FORMAT)}  app start ===")
+    print(f"  data folder: {BASE_DIR}")
+
+
+def show_app_error(message: str, fatal: bool = True):
+    """Put a problem in front of someone running the windowed app.
+
+    Without this the exe would simply vanish, or do something unasked for:
+    there is no console for the explanation to land in, and the log file is
+    only useful once you know to look for it.
+    """
+    print(message)
+    if os.name != "nt" or not FROZEN:
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            f"{message}\n\nThe full details are in:\n{APP_LOG_PATH}",
+            f"{APP_WINDOW_TITLE} - could not start"
+            if fatal
+            else f"{APP_WINDOW_TITLE}",
+            (0x10 if fatal else 0x30) | 0x1000,  # ICONERROR/ICONWARNING, SYSTEMMODAL
+        )
+    except Exception:
+        pass
+
+
+def _write_app_lock(port: int, token: str):
+    try:
+        with open(APP_LOCK_PATH, "w", encoding="utf-8") as handle:
+            json.dump({"port": port, "token": token, "pid": os.getpid()}, handle)
+    except OSError:
+        pass
+
+
+def _clear_app_lock():
+    try:
+        os.remove(APP_LOCK_PATH)
+    except OSError:
+        pass
+
+
+def focus_running_app() -> bool:
+    """Hand a second launch over to the window that is already open.
+
+    Returns True when a running app answered, in which case this process has
+    nothing left to do.  A stale lock file simply fails to answer and is
+    removed, so a crash never blocks the next launch.
+    """
+    try:
+        with open(APP_LOCK_PATH, "r", encoding="utf-8") as handle:
+            lock = json.load(handle)
+        port = int(lock["port"])
+        token = str(lock["token"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+    url = f"http://{WEB_HOST}:{port}/api/focus?t={urllib.parse.quote(token)}"
+    request = urllib.request.Request(url, data=b"", method="POST")
+    try:
+        # Generous for a loopback call to a process that is already running:
+        # a timeout here would clear a live lock and open a second window.
+        with urllib.request.urlopen(request, timeout=5) as response:
+            if response.status == 200:
+                return True
+    except Exception:
+        pass
+    _clear_app_lock()
+    return False
+
+
+def _watch_app_focus(session: ReporterSession, state: WebSessionState, window):
+    """Bring the window forward when another launch asks for it."""
+    while not session.is_shutting_down():
+        if state.take_focus_request():
+            for action in (
+                lambda: window.restore(),
+                lambda: window.show(),
+                # A momentary topmost is what actually lifts a WebView2 window
+                # above the window that launched it.
+                lambda: setattr(window, "on_top", True),
+                lambda: setattr(window, "on_top", False),
+            ):
+                try:
+                    action()
+                except Exception:
+                    pass
+        time.sleep(0.3)
+
+
+def _watch_app_shutdown(session: ReporterSession, window):
+    """Close the window when the session ends from somewhere other than it."""
+    session.wait_for_shutdown()
+    try:
+        window.destroy()
+    except Exception:
+        pass
+
+
+def run_desktop_app(session: ReporterSession, port_hint: int = None):
+    """Run the UI in a native window.  Returns an exit code, or None if the
+    window could not be created at all."""
+    try:
+        import webview
+    except ImportError as exc:
+        # ModuleNotFoundError when pywebview is absent, plain ImportError when
+        # it is present but one of its DLLs will not load.
+        print(f"  The desktop window needs pywebview ({exc}).")
+        return None
+
+    server, state, error = start_web_server(session, port_hint)
+    if server is None:
+        print(f"  The desktop window could not start: {error}")
+        return None
+
+    port = server.server_address[1]
+    # Same process, same machine: the window always talks to 127.0.0.1, never
+    # to the `localhost` spelling the WSL browser path needs.
+    url = web_url(port, state.token, host=WEB_HOST)
+    _write_app_lock(port, state.token)
+    print(f"  serving the window on {url}")
+
+    try:
+        window = webview.create_window(
+            APP_WINDOW_TITLE,
+            url,
+            width=APP_WINDOW_SIZE[0],
+            height=APP_WINDOW_SIZE[1],
+            min_size=APP_WINDOW_MIN_SIZE,
+            background_color=APP_BACKGROUND,
+            text_select=True,
+        )
+        window.events.closed += lambda: session.request_shutdown("window closed")
+
+        threading.Thread(
+            target=_watch_app_focus,
+            args=(session, state, window),
+            name="task-report-app-focus",
+            daemon=True,
+        ).start()
+        threading.Thread(
+            target=_watch_app_shutdown,
+            args=(session, window),
+            name="task-report-app-close",
+            daemon=True,
+        ).start()
+
+        storage = app_storage_path()
+        os.makedirs(storage, exist_ok=True)
+        # start() owns the main thread until the last window is closed.
+        webview.start(private_mode=False, storage_path=storage)
+    except Exception as exc:
+        print(f"  The desktop window failed to open ({exc}).")
+        print("  Falling back to the browser for this session.")
+        launcher = open_in_browser(url)
+        if not launcher:
+            _clear_app_lock()
+            try:
+                server.shutdown()
+            except Exception:
+                pass
+            return None
+        _watch_web_clients(session, state, allow_idle_timeout=True)
+
+    session.request_shutdown("window closed")
+    _clear_app_lock()
+    try:
+        server.shutdown()
+    except Exception:
+        pass
+    return 0
+
+
 def _http_probe(url: str):
     """Fetch `url` from this shell.  Returns (ok, detail)."""
     try:
@@ -5576,6 +5897,75 @@ def _doctor_qt_section(forced_platform: str = None) -> bool:
     return False
 
 
+def _webview2_runtime_version() -> str:
+    """The installed Edge WebView2 runtime, or "" when it cannot be found.
+
+    Read from the registry, because that is where the evergreen runtime records
+    itself whether it was installed per-machine or per-user.
+    """
+    if os.name != "nt":
+        return ""
+    try:
+        import winreg
+    except ModuleNotFoundError:
+        return ""
+
+    key_path = (
+        r"SOFTWARE\Microsoft\EdgeUpdate\Clients"
+        r"\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    )
+    for root, flags in (
+        (winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_32KEY),
+        (winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_64KEY),
+        (winreg.HKEY_CURRENT_USER, 0),
+    ):
+        try:
+            with winreg.OpenKey(
+                root, key_path, 0, winreg.KEY_READ | flags
+            ) as key:
+                version, _ = winreg.QueryValueEx(key, "pv")
+            if version and version != "0.0.0.0":
+                return str(version)
+        except OSError:
+            continue
+    return ""
+
+
+def _doctor_app_section() -> bool:
+    """Can the native desktop window (--app) come up on this machine?"""
+    print()
+    print("Desktop window (--app)")
+    print("-" * 68)
+
+    try:
+        import webview  # noqa: F401
+    except ModuleNotFoundError as exc:
+        print(f"  [no] pywebview is not installed here ({exc.name}).")
+        print("       The packaged Windows app ships it; a plain checkout")
+        print("       needs: pip install pywebview")
+        return False
+    print("  [ok] pywebview importable")
+
+    if os.name != "nt":
+        print("  [--] not on Windows: the window would use this desktop's")
+        print("       own toolkit, which is the thing the browser UI avoids.")
+        print("       Use the browser UI here.")
+        return False
+
+    version = _webview2_runtime_version()
+    if version:
+        print(f"  [ok] Edge WebView2 runtime {version}")
+    else:
+        print("  [no] no Edge WebView2 runtime found in the registry.")
+        print("       Install it from https://go.microsoft.com/fwlink/p/?LinkId=2124703")
+        return False
+
+    print(f"  [--] running as a packaged app : {FROZEN}")
+    if os.path.exists(APP_LOCK_PATH):
+        print(f"  [--] an app window looks open  : {APP_LOCK_PATH}")
+    return True
+
+
 def run_doctor(forced_platform: str = None) -> int:
     print("Task Reporter - environment check")
     print("=" * 68)
@@ -5601,11 +5991,15 @@ def run_doctor(forced_platform: str = None) -> int:
     print("=" * 68)
 
     web_ok = _doctor_web_section()
+    app_ok = _doctor_app_section()
     _doctor_qt_section(forced_platform)
 
     print()
     print("-" * 68)
-    if web_ok:
+    if web_ok and app_ok:
+        print("  Verdict: the desktop window will come up - run TaskReporter.exe")
+        print("           (or ./task-report --app), and the browser UI also works.")
+    elif web_ok:
         print("  Verdict: run ./task-report - the browser UI will come up.")
     else:
         print("  Verdict: the terminal console still works everywhere:")
@@ -5614,6 +6008,11 @@ def run_doctor(forced_platform: str = None) -> int:
 
 
 def main(argv: list) -> int:
+    # A windowed .exe has no stdout at all, so this has to come before the
+    # first print() anywhere - including argparse's own error messages.
+    if FROZEN and (sys.stdout is None or sys.stderr is None):
+        start_app_log()
+
     # Without a tty, Python block-buffers stdout - which would hide the one
     # line that matters most when a browser fails to open: the UI's address.
     for stream in (sys.stdout, sys.stderr):
@@ -5635,6 +6034,14 @@ def main(argv: list) -> int:
     )
     parser.add_argument(
         "--cli", action="store_true", help="Terminal console only (no UI)"
+    )
+    parser.add_argument(
+        "--app",
+        action="store_true",
+        help=(
+            "Show the UI in a native desktop window instead of a browser tab. "
+            "This is what the packaged Windows app does by default."
+        ),
     )
     parser.add_argument(
         "--qt",
@@ -5714,6 +6121,19 @@ def main(argv: list) -> int:
         print("Please choose only one mode: --gui or --cli")
         return 1
 
+    if args.app and args.cli:
+        print("Please choose only one mode: --app or --cli")
+        return 1
+
+    # The packaged app is a window by default; the flags are still there for
+    # anyone running the exe from a command prompt.
+    want_app = args.app or (
+        FROZEN and not (args.cli or args.qt or args.no_browser)
+    )
+    if want_app and focus_running_app():
+        # Task Reporter is already open - that window was raised instead.
+        return 0
+
     flush_pending_reports()
 
     if args.doctor:
@@ -5753,9 +6173,27 @@ def main(argv: list) -> int:
     platform_name = None
     attempts = []
 
-    start_cli = not args.gui and stdin_is_tty
-    if not args.cli and not args.gui and not stdin_is_tty:
+    start_cli = not args.gui and not want_app and stdin_is_tty
+    if not args.cli and not args.gui and not want_app and not stdin_is_tty:
         print("No interactive terminal attached - running the UI only.")
+
+    # The desktop window first when it was asked for: it is the surface that
+    # needs neither a terminal to stay open nor a browser tab to stay found.
+    if want_app:
+        exit_code = run_desktop_app(session, port_hint=args.port)
+        if exit_code is not None:
+            wait_for_quiet_workbook()
+            _print_session_summary(session)
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(exit_code)
+        # Getting a browser tab you did not ask for is only reasonable if it
+        # comes with the reason - and the reason is in the log.
+        show_app_error(
+            "The desktop window could not open, so Task Reporter is falling "
+            "back to your browser for this session.",
+            fatal=False,
+        )
 
     # The browser UI first, because it is the surface that does not depend on a
     # display server.  It only steps aside if no loopback port can be bound.
@@ -5826,7 +6264,23 @@ def main(argv: list) -> int:
     return 0
 
 
+def _run_frozen() -> int:
+    """main() for the packaged app, with nowhere for a traceback to go."""
+    import traceback
+
+    try:
+        return main(sys.argv[1:])
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else 0
+    except BaseException:
+        traceback.print_exc()
+        show_app_error("Task Reporter hit an error it could not recover from.")
+        return 1
+
+
 if __name__ == "__main__":
+    if FROZEN:
+        sys.exit(_run_frozen())
     try:
         sys.exit(main(sys.argv[1:]))
     except BrokenPipeError:

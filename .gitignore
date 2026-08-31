@@ -8,3 +8,17 @@ __pycache__/
 # in-flight temp file an atomic save writes through
 task_board.json.bad
 task_board.json.tmp
+
+# the packaged Windows app: the build venv, PyInstaller's scratch folders,
+# the built exe, and the path baked into it at build time
+.winenv/
+build/
+TaskReporter.exe
+windows/project_home.txt
+windows/devrun.log
+
+# where the windowed app writes what used to go to the terminal, and how a
+# second launch finds the window that is already open
+.task_reporter_app.log
+.task_reporter_app.log.1
+.task_reporter_app.lock

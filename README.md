@@ -2,9 +2,13 @@
 
 Files task reports into `task_reports.xlsx` with an automatic timestamp.
 
-There are two ways to write one, and by default **both run at once** from a
-single process: a browser window and a terminal console. File the report in
-whichever one is in front of you — **closing either one closes the other.**
+On Windows it is a **desktop app**: double-click *Task Reporter*, a window
+opens, and there is no terminal and no browser tab to keep track of. See
+[The Windows app](#the-windows-app).
+
+From a Linux shell it is the same UI served into your browser, alongside a
+terminal console — by default **both run at once** from a single process, and
+**closing either one closes the other.**
 
 Reports can also be *built up* rather than typed in one go. The **task board**
 keeps the running list of what has to be done — a day, the projects worked on
@@ -15,13 +19,17 @@ report rows, one row per day, grouped under their project headers. See
 
 ## Running it
 
-From Windows, double-click `task_reporter.bat`.
+On Windows, double-click **Task Reporter** on the Desktop — or
+`TaskReporter.exe` in this folder. `task_reporter.bat` still runs the WSL
+version with its terminal, for when you want the console commands.
+
 From a Linux shell in this folder:
 
 ```bash
 ./task-report              # browser UI + terminal console together
 ./task-report --cli        # terminal console only
 ./task-report --gui        # browser UI only
+./task-report --app        # native desktop window, no terminal, no browser
 ./task-report -m "text"    # file one report and exit (scriptable)
 ./task-report --list       # print recent reports
 ./task-report --board      # print the task board
@@ -37,7 +45,9 @@ Piped input works too: `echo "fixed the launcher" | ./task-report --cli`
 
 ### Launching it from the Desktop
 
-Either works:
+The Windows app puts itself there — `windows\install_shortcut.bat` makes the
+Desktop and Start menu shortcuts. For `task_reporter.bat` (the WSL version
+with the terminal), either works:
 
 * **A shortcut** (right-click `task_reporter.bat` → *Send to* → *Desktop
   (create shortcut)*). A shortcut runs the original file where it lives, so
@@ -47,6 +57,90 @@ Either works:
   `FALLBACKDIR` path recorded at the top of the file. A copy falls through to
   `FALLBACKDIR`, so **if you ever move the project, update that one line** —
   or set `TASK_REPORT_DIR` and it takes precedence over everything.
+
+## The Windows app
+
+`TaskReporter.exe` is the whole program in one file: it serves the UI to
+itself and draws it in a real window with a real title bar and a real taskbar
+entry. Nothing else has to stay open — no terminal, no browser tab.
+
+The window is exactly the page described in [The browser UI](#the-browser-ui),
+so everything below about the Report and Board views, the shortcuts and the
+history panel applies unchanged.
+
+### Building it
+
+Two steps, both from Windows, and neither needs WSL:
+
+```
+windows\build.bat              # produces TaskReporter.exe in this folder
+windows\install_shortcut.bat   # Desktop + Start menu shortcuts
+```
+
+`build.bat` creates a private virtual environment in `.winenv\` the first time
+it runs (openpyxl, pywebview and PyInstaller), then packages the same
+`task-report-maker.py` the Linux launcher runs. The exe carries its own Python,
+so nothing needs to be installed for it to run.
+
+`.winenv\` and `build\` are build scratch — about 70 MB, git-ignored, and safe
+to delete at any time; the next `build.bat` makes them again.
+
+`windows\install_shortcut.bat /remove` takes the shortcuts away again.
+
+To change the UI without repackaging every time, `windows\run_dev.bat` runs the
+window straight from the source file using that same environment.
+
+### Where the reports go
+
+The same `task_reports.xlsx` and `task_board.json` as every other surface. The
+exe finds them the way `task_reporter.bat` does — `%TASK_REPORT_DIR%` if it is
+set, then the folder the exe is sitting in if that folder holds the data, then
+the project path recorded when it was built. So a copy of the exe carried
+somewhere else still files into the real workbook, and `%TASK_REPORT_DIR%`
+overrides all of it if the project ever moves.
+
+That path matters because a packaged app cannot use the folder its code is in:
+PyInstaller unpacks itself into a temporary directory that is deleted on exit,
+which is exactly where a workbook must never be written.
+
+### One window, not several
+
+Launching it again while it is already open raises the window that is there
+rather than opening a second one. The running app records its address in
+`.task_reporter_app.lock`, and the second launch hands the request over and
+exits. If that file is ever left behind by a crash it simply fails to answer
+and is cleared, so it can never block a start-up.
+
+Nor does it share a port with a session running somewhere else. A session
+started under WSL holds port 8770 inside the VM *and* has it mirrored onto
+Windows by `wslrelay.exe`, and Windows will happily let a second process bind
+the same port and then split incoming connections between the two. So the app
+asks whether a port already answers before binding it, and moves to the next
+one if it does — otherwise the window can end up loading a session that is not
+its own, token and all.
+
+### If it does not start
+
+There is no terminal for it to complain in, so it says so in a message box and
+writes everything to `.task_reporter_app.log` beside the workbook. That file is
+also where the start-up address and any save errors go.
+
+The one requirement is the **Edge WebView2 runtime**, which ships with Windows
+10 and 11 and with Edge itself. `./task-report --doctor` reports its version
+along with everything else, and links to the installer if it is missing.
+
+### Why a window here and not under WSL
+
+The window is drawn by WebView2 — an Edge process on Windows, placed by the
+Windows window manager. That is the same reasoning as
+[Why a browser and not a desktop window](#why-a-browser-and-not-a-desktop-window)
+below, and not a reversal of it: what that section rules out is rendering
+through WSLg, and neither the browser UI nor this window does. The Qt window
+did, which is why it stays opt-in.
+
+What the window does not have is the terminal console and its `:t` commands.
+Everything they do is on the Board view; for scripting, the Linux launcher and
+its flags are unchanged.
 
 ## The browser UI
 
