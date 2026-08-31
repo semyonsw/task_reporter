@@ -266,6 +266,9 @@ function Run { param([string]$Exe, [string[]]$Arguments = @(), [string]$WorkDir 
         Set-Location $prevLoc
         $ErrorActionPreference = $prevPref
     }
+    # Strip the colour escapes tools emit, so both the log and every pattern
+    # match below see plain text.
+    if ($text) { $text = [regex]::Replace($text, "$([char]27)\[[0-9;]*[A-Za-z]", '') }
     Log ("  exit  " + $code)
     if ($text -and $text.Trim()) { Log ("  ----- " + $text.Trim()) }
     return @{ Code = $code; Output = [string]$text }
