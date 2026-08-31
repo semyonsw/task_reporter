@@ -2365,6 +2365,13 @@ button { font-family: inherit; cursor: pointer; }
 }
 .icon-btn:hover { background: #2D3860; color: #A8BFFF; }
 .icon-btn:active { background: #3B4A80; }
+/* The folder is drawn rather than typed: the emoji a font would give it comes
+   out full-colour, which is the one thing this header has none of. */
+.icon-btn svg {
+  width: 15px; height: 15px; display: block;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.7; stroke-linejoin: round;
+}
 .separator { height: 1px; background: #1E2640; flex: none; }
 
 /* editor card */
@@ -2769,6 +2776,7 @@ kbd {
     </div>
     <div class="header-right">
       <span class="clock" id="clock"></span>
+      <button class="icon-btn" id="revealBtn" aria-label="Show the reports file in the file manager"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.2 7.4A1.7 1.7 0 0 1 4.9 5.7h3.6a1.7 1.7 0 0 1 1.3.6l1 1.3h7.3a1.7 1.7 0 0 1 1.7 1.7v7.6a1.7 1.7 0 0 1-1.7 1.7H4.9a1.7 1.7 0 0 1-1.7-1.7z"/></svg></button>
       <button class="icon-btn" id="historyBtn" title="View previous reports" aria-label="View previous reports">&#9776;</button>
       <button class="icon-btn" id="helpBtn" title="View keyboard shortcuts" aria-label="View keyboard shortcuts">?</button>
     </div>
@@ -2986,6 +2994,13 @@ function setStatus(text, kind) {
 function flashStatus(text, kind) {
   setStatus(text, kind);
   statusTimer = setTimeout(() => { statusTimer = null; updateCounter(); }, 6000);
+}
+
+// Whichever view is on screen owns the status line, and the folder button is
+// in the header - above both of them.
+function flashHere(text, kind) {
+  if (currentView === "board") flashBoard(text, kind);
+  else flashStatus(text, kind);
 }
 
 function updateCounter() {
@@ -4013,6 +4028,21 @@ function setView(name) {
 
 saveBtn.addEventListener("click", saveReport);
 editor.addEventListener("input", updateCounter);
+// The path is only known to the server, so the tooltip is filled in here
+// rather than written into the markup.
+const revealBtn = $("revealBtn");
+revealBtn.title = "Show " + CFG.workbook + " in the file manager";
+
+revealBtn.addEventListener("click", async () => {
+  flashHere("Opening the reports folder\u2026", null);
+  try {
+    const out = await api("/api/reveal", {});
+    flashHere(out.message || "Opened the reports folder", out.ok ? "success" : "danger");
+  } catch (err) {
+    flashHere("Lost contact with the reporter.", "danger");
+  }
+});
+
 $("historyBtn").addEventListener("click", openHistory);
 $("helpBtn").addEventListener("click", () => openModal("helpBackdrop"));
 $("editSave").addEventListener("click", saveEdit);
@@ -4383,6 +4413,10 @@ class _ReporterRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(_web_forget_project(payload))
             return
 
+        if path == "/api/reveal":
+            self._send_json(reveal_workbook())
+            return
+
         if path == "/api/tasks/clear-filed":
             self._send_json({"ok": True, "removed": delete_filed_tasks()})
             return
@@ -4736,6 +4770,106 @@ def open_in_browser(url: str) -> str:
     except Exception:
         pass
     return ""
+
+
+def _windows_path(path: str) -> str:
+    """Translate a Linux path into the Windows spelling, or "" if it cannot be.
+
+    Only meaningful under WSL, where Explorer is a Windows program and has
+    never heard of /c/... or /home/...  wslpath handles both, including the
+    \\wsl$\ form for files that live inside the VM.
+    """
+    try:
+        result = subprocess.run(
+            ["wslpath", "-w", path],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _reveal_launchers(path: str) -> list:
+    """Ways to show `path` in a file manager, best first.  (label, argv) pairs.
+
+    Selecting the file beats opening the folder, so the exact file being talked
+    about is the one highlighted - but a folder is offered as the fallback,
+    because the workbook does not exist until the first report is filed.
+    """
+    folder = os.path.dirname(path) or "."
+    exists = os.path.exists(path)
+    launchers = []
+
+    if os.name == "nt":
+        explorer = shutil.which("explorer.exe") or "explorer.exe"
+        if exists:
+            # One argument, comma and all: Explorer does not accept /select as
+            # a separate token.
+            launchers.append(("Explorer", [explorer, f"/select,{path}"]))
+        launchers.append(("Explorer", [explorer, folder]))
+        return launchers
+
+    if sys.platform == "darwin":
+        if exists:
+            launchers.append(("Finder", ["open", "-R", path]))
+        launchers.append(("Finder", ["open", folder]))
+        return launchers
+
+    if is_wsl():
+        explorer = shutil.which("explorer.exe")
+        if explorer:
+            windows_file = _windows_path(path) if exists else ""
+            windows_folder = _windows_path(folder)
+            if windows_file:
+                launchers.append(("Explorer", [explorer, f"/select,{windows_file}"]))
+            if windows_folder:
+                launchers.append(("Explorer", [explorer, windows_folder]))
+
+    for label, tool in (("xdg-open", "xdg-open"), ("gio open", "gio")):
+        resolved = shutil.which(tool)
+        if not resolved:
+            continue
+        launchers.append(
+            (label, [resolved, "open", folder] if tool == "gio" else [resolved, folder])
+        )
+
+    return launchers
+
+
+def reveal_workbook() -> dict:
+    """Show task_reports.xlsx in the desktop's file manager.
+
+    Answers in the shape the browser UI expects, and never raises: not being
+    able to open a window is worth a message, not a broken button.
+    """
+    path = EXCEL_FILE_PATH
+    folder = os.path.dirname(path)
+
+    launchers = _reveal_launchers(path)
+    if not launchers:
+        return {
+            "ok": False,
+            "path": path,
+            "message": f"No file manager could be found. The reports are in {folder}",
+        }
+
+    for label, argv in launchers:
+        if _run_launcher(label, argv):
+            where = "the reports folder" if not os.path.exists(path) else EXCEL_FILE_NAME
+            return {
+                "ok": True,
+                "path": path,
+                "message": f"Showing {where} in {label}",
+            }
+
+    return {
+        "ok": False,
+        "path": path,
+        "message": f"The file manager would not open. The reports are in {folder}",
+    }
 
 
 def _wait_for_page(state: "WebSessionState", timeout: float) -> bool:
@@ -5534,8 +5668,9 @@ def run_web(
 # compositor is involved.
 
 APP_WINDOW_TITLE = "Task Reporter"
+# In CSS pixels - what the page is laid out in.  See _app_window_geometry().
 APP_WINDOW_SIZE = (1080, 780)
-APP_WINDOW_MIN_SIZE = (720, 560)
+APP_WINDOW_MIN_SIZE = (760, 560)
 APP_BACKGROUND = "#0F1117"
 
 # Two files the app keeps beside the workbook.  The lock is how a second
@@ -5544,6 +5679,46 @@ APP_BACKGROUND = "#0F1117"
 APP_LOCK_PATH = os.path.join(BASE_DIR, ".task_reporter_app.lock")
 APP_LOG_PATH = os.path.join(BASE_DIR, ".task_reporter_app.log")
 APP_LOG_MAX_BYTES = 512 * 1024
+
+
+def _app_window_geometry():
+    """The window size to ask for, and the smallest it may be dragged to.
+
+    pywebview's width and height are logical pixels - the same units the page
+    is laid out in - so a scaled display needs no arithmetic here, and adding
+    any produces a window proportionally too big.  (Measured: a window asked
+    for at 1350 gives the page 1336 CSS pixels on a 125% display.  Screenshot
+    tools that are not themselves DPI-aware report such a window at its
+    logical size and crop the capture, which looks exactly like the layout
+    overflowing.  It is not.)
+
+    The only adjustment worth making is the one that is not about DPI: a
+    default that does not fit the screen.  GetSystemMetrics answers in logical
+    pixels for this process, which is the unit wanted.
+    """
+    width, height = APP_WINDOW_SIZE
+    min_width, min_height = APP_WINDOW_MIN_SIZE
+    if os.name != "nt":
+        return width, height, min_width, min_height
+
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        screen_w = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+        screen_h = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+        if screen_w > 0 and screen_h > 0:
+            width = min(width, int(screen_w * 0.94))
+            # Short of the full height, so the title bar does not start out
+            # underneath the taskbar.
+            height = min(height, int(screen_h * 0.88))
+            # The minimum is a floor, so it must never end up above the size.
+            min_width = min(min_width, width)
+            min_height = min(min_height, height)
+    except Exception:
+        pass
+
+    return width, height, min_width, min_height
 
 
 def app_storage_path() -> str:
@@ -5700,13 +5875,16 @@ def run_desktop_app(session: ReporterSession, port_hint: int = None):
     _write_app_lock(port, state.token)
     print(f"  serving the window on {url}")
 
+    width, height, min_width, min_height = _app_window_geometry()
+    print(f"  window {width}x{height} (minimum {min_width}x{min_height})")
+
     try:
         window = webview.create_window(
             APP_WINDOW_TITLE,
             url,
-            width=APP_WINDOW_SIZE[0],
-            height=APP_WINDOW_SIZE[1],
-            min_size=APP_WINDOW_MIN_SIZE,
+            width=width,
+            height=height,
+            min_size=(min_width, min_height),
             background_color=APP_BACKGROUND,
             text_select=True,
         )

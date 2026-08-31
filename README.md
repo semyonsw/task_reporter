@@ -151,6 +151,13 @@ two views, switched with the **Report / Board** tabs in the header or with
 * **Report** — type the report, press **Ctrl+Enter** (or click *Save Report*).
 * **Board** — the task list. See [The task board](#the-task-board).
 
+The folder button opens `task_reports.xlsx` in the file manager — Explorer on
+Windows, with the workbook itself highlighted rather than just its folder — so
+the spreadsheet is one click away from the app that writes it. Hovering it
+shows the full path. Under WSL it hands the Windows path to Explorer, because
+Explorer has never heard of `/c/...`; on a Linux or macOS desktop it opens the
+folder in that desktop's own file manager.
+
 `☰` shows previous reports, where each one can be edited or deleted; `?` lists
 the shortcuts. The number on the *Board* tab is how many ticked tasks are
 waiting to be filed.

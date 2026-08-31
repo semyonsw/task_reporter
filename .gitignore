@@ -15,7 +15,6 @@ task_board.json.tmp
 build/
 TaskReporter.exe
 windows/project_home.txt
-windows/devrun.log
 
 # where the windowed app writes what used to go to the terminal, and how a
 # second launch finds the window that is already open

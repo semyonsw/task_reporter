@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 14,
+  "seq": 16,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -155,6 +155,28 @@
       "created_at": "31/08/2026 10:53:20",
       "done_at": "31/08/2026 10:53:22",
       "filed_at": "31/08/2026 10:53:30"
+    },
+    {
+      "id": "jcDxze4hP9g",
+      "seq": 15,
+      "date": "2026-08-31",
+      "project": "Logistics",
+      "text": "merge the 141 xml files in a correct way and send to the logistics chief, and get approval about the correctness of the files",
+      "done": false,
+      "created_at": "31/08/2026 11:12:13",
+      "done_at": null,
+      "filed_at": null
+    },
+    {
+      "id": "eD_DjvUP7Mg",
+      "seq": 16,
+      "date": "2026-08-31",
+      "project": "Buy For Me",
+      "text": "add a clickable link for revealing/seeing the tracking code from the mail (the tracking code viewer buttons link))",
+      "done": true,
+      "created_at": "31/08/2026 11:12:56",
+      "done_at": "31/08/2026 11:20:02",
+      "filed_at": null
     }
   ],
   "projects": [
