@@ -54,6 +54,8 @@ From a Linux shell in this folder:
 ./task-report --board      # print the task board
 ./task-report -t "text"    # add a task to the board and exit
 ./task-report --file-checked   # file every ticked task and exit
+./task-report --merge-days --dry-run   # find days split over several rows
+./task-report --merge-days     # fold them into one row each (once, see below)
 ./task-report --doctor     # check both UIs end to end
 ./task-report --no-browser # print the address instead of opening a browser
 ./task-report --port 8770  # serve the UI on a specific port
@@ -257,7 +259,62 @@ ticked task becomes report rows in `task_reports.xlsx`:
   today still lands on the day the work happened, not on today;
 * inside a row, the tasks are grouped under their `[project]` headers, in the
   order the projects were first written that day;
-* a preview shows the exact text of every row before anything is written.
+* filing a day that is **already in the sheet adds to that row** rather than
+  making a second one — see [A day is a row](#a-day-is-a-row);
+* a preview shows the exact text of every row before anything is written, and
+  says which days are being added to rather than started.
+
+### A day is a row
+
+A day never gets a second row. Filing anything for a day that is already in the
+workbook adds to that day's cell instead: the new text goes **a blank line under
+what is there**, and the row's **Date-Time moves to the newer time**, so the
+stamp always says when that day's work was last added to.
+
+Three reports filed on the 7th are therefore one row, not three:
+
+```
+07/09/2026 17:49:15   [AI Agents Score]
+                      • Fixed the "view ticket" text
+
+                      [Buy For Me]
+                      • changed the links of the telegram bot
+
+                      [Buy For Me]
+                      • add "Tracking code found!" alert
+```
+
+Only a different day starts a new row. This applies to everything that writes —
+the board's **File Checked Tasks**, a report typed in the Report view, `-m` from
+a script, and reports that were queued while Excel had the workbook open and
+merged in afterwards. All of them go through the same step, so no two of them
+can disagree about where a report lands.
+
+The one exception is size: if a day's text plus the new report would take the
+cell past 32000 characters (short of Excel's own 32767, with room to spare),
+that day takes a second row rather than losing the overflow. The filing preview
+works the total out the same way, so it says so before you commit.
+
+Reports queued while Excel is open are shown separately in the history until
+the merge actually happens — they are not in the sheet yet, and saying otherwise
+would be a lie about where they are.
+
+#### Days that were split before this
+
+A workbook written before the above has whatever rows it accumulated, and
+nothing merges them on its own — rewriting somebody's sheet is not a thing to do
+without being asked. `--merge-days` does it, once:
+
+```bash
+./task-report --merge-days --dry-run   # what it would merge, writing nothing
+./task-report --merge-days             # do it
+```
+
+Each day's rows are joined in the order they are already in, a blank line
+between each, and the day keeps its latest stamp. Rows whose Date-Time cannot be
+read as a date are left exactly where they are — there is no way to tell which
+day they belong to, and guessing would move a report. Like editing a report,
+this rewrites the sheet, so it is refused while the workbook is open in Excel.
 
 ### How a filed row is laid out
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 16,
+  "seq": 33,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -162,10 +162,10 @@
       "date": "2026-08-31",
       "project": "Logistics",
       "text": "merge the 141 xml files in a correct way and send to the logistics chief, and get approval about the correctness of the files",
-      "done": false,
+      "done": true,
       "created_at": "31/08/2026 11:12:13",
-      "done_at": null,
-      "filed_at": null
+      "done_at": "31/08/2026 14:41:52",
+      "filed_at": "01/09/2026 14:18:52"
     },
     {
       "id": "eD_DjvUP7Mg",
@@ -176,11 +176,201 @@
       "done": true,
       "created_at": "31/08/2026 11:12:56",
       "done_at": "31/08/2026 11:20:02",
+      "filed_at": "01/09/2026 14:18:52"
+    },
+    {
+      "id": "gXpuSf8t1O0",
+      "seq": 17,
+      "date": "2026-09-01",
+      "project": "Buy For Me",
+      "text": "«ԳՆԻ՛Ր ԻՄ ՓՈԽԱՐԵՆ»-ի նոր պատվերի հարցում-should be removed, and not considered",
+      "done": true,
+      "created_at": "01/09/2026 15:40:05",
+      "done_at": "01/09/2026 19:41:54",
+      "filed_at": "01/09/2026 19:41:58"
+    },
+    {
+      "id": "VPgpLfHlHX0",
+      "seq": 18,
+      "date": "2026-09-01",
+      "project": "Buy For Me",
+      "text": "in the buy4me telegram bot make the structure as Rob mentioned",
+      "done": true,
+      "created_at": "01/09/2026 15:41:07",
+      "done_at": "01/09/2026 17:14:26",
+      "filed_at": "01/09/2026 19:41:58"
+    },
+    {
+      "id": "VbJdxQy68PU",
+      "seq": 19,
+      "date": "2026-09-01",
+      "project": "FPL Captain",
+      "text": "fix the \"properties not found issue\"",
+      "done": true,
+      "created_at": "01/09/2026 16:18:34",
+      "done_at": "01/09/2026 17:07:50",
+      "filed_at": "01/09/2026 19:41:58"
+    },
+    {
+      "id": "opPN0n5JUic",
+      "seq": 20,
+      "date": "2026-09-01",
+      "project": "ONEX-Academy",
+      "text": "fix the grammatical issue in the onex-academy website",
+      "done": true,
+      "created_at": "01/09/2026 16:21:50",
+      "done_at": "01/09/2026 16:21:51",
+      "filed_at": "01/09/2026 19:41:58"
+    },
+    {
+      "id": "tv7qP7VbFVw",
+      "seq": 21,
+      "date": "2026-09-02",
+      "project": "Buy For Me",
+      "text": "add Rob's new email and make that be tracked and telegram bot alerted also",
+      "done": true,
+      "created_at": "02/09/2026 17:48:06",
+      "done_at": "02/09/2026 17:48:08",
+      "filed_at": "02/09/2026 19:32:50"
+    },
+    {
+      "id": "BA8Ett8rMzs",
+      "seq": 22,
+      "date": "2026-09-03",
+      "project": "Buy For Me",
+      "text": "delete the email row from the telegram bot message",
+      "done": true,
+      "created_at": "03/09/2026 15:38:13",
+      "done_at": "03/09/2026 16:28:44",
+      "filed_at": "03/09/2026 18:17:25"
+    },
+    {
+      "id": "8AHXKJfvTFA",
+      "seq": 23,
+      "date": "2026-09-03",
+      "project": "Buy For Me",
+      "text": "update the [buy for me]'s ai agent's prompt so the agent should send only the necessary and correct emails with its tracking codes/order ids",
+      "done": true,
+      "created_at": "03/09/2026 16:29:39",
+      "done_at": "03/09/2026 19:50:16",
+      "filed_at": "03/09/2026 19:50:18"
+    },
+    {
+      "id": "5YvOvsxixow",
+      "seq": 24,
+      "date": "2026-09-03",
+      "project": "Buy For Me",
+      "text": "update the \"BFM Request Link\" to the sorted and filtered ONEX Buy For Me Admin page",
+      "done": true,
+      "created_at": "03/09/2026 16:44:08",
+      "done_at": "03/09/2026 16:59:29",
+      "filed_at": "03/09/2026 18:17:25"
+    },
+    {
+      "id": "vlVxxORMAws",
+      "seq": 25,
+      "date": "2026-09-04",
+      "project": "Buy For Me",
+      "text": "continue working on automation button clicking system",
+      "done": true,
+      "created_at": "03/09/2026 19:50:38",
+      "done_at": "04/09/2026 17:08:47",
+      "filed_at": "04/09/2026 18:06:19"
+    },
+    {
+      "id": "ZYu99RtpLfs",
+      "seq": 26,
+      "date": "2026-09-04",
+      "project": "ai-agents-scores",
+      "text": "fix the view ticket text, make that the same clickable way, but the ticket id text instead, so replace them",
+      "done": true,
+      "created_at": "04/09/2026 16:04:43",
+      "done_at": "04/09/2026 17:10:26",
+      "filed_at": "04/09/2026 18:06:19"
+    },
+    {
+      "id": "YfuCNUeQuKE",
+      "seq": 27,
+      "date": "2026-09-04",
+      "project": "ai-agents-scores",
+      "text": "add a 'copy' button to the each text of the ai agent's criteria clarification, also add a 'copy all', clicking which the user should check the necessary boxes of the corresponding criteria and click copy and copy all the selected ones with nice and understandable structure",
+      "done": true,
+      "created_at": "04/09/2026 17:10:23",
+      "done_at": "04/09/2026 17:10:26",
+      "filed_at": "04/09/2026 18:06:19"
+    },
+    {
+      "id": "242NGPbYER8",
+      "seq": 28,
+      "date": "2026-09-07",
+      "project": "Buy For Me",
+      "text": "changed the links of the telegram bot \"BFM request link\" to the real searched request links with oder id already searching",
+      "done": true,
+      "created_at": "07/09/2026 15:17:09",
+      "done_at": "07/09/2026 15:47:14",
+      "filed_at": "07/09/2026 15:47:39"
+    },
+    {
+      "id": "bFiNzal-bGc",
+      "seq": 29,
+      "date": "2026-09-07",
+      "project": "Buy For Me",
+      "text": "add \"Tracking code found!\" alert in the telegram bot message",
+      "done": true,
+      "created_at": "07/09/2026 15:17:24",
+      "done_at": "07/09/2026 17:49:08",
+      "filed_at": "07/09/2026 17:49:15"
+    },
+    {
+      "id": "zA5EE0NCXc0",
+      "seq": 30,
+      "date": "2026-09-07",
+      "project": "Buy For Me",
+      "text": "return back the sender name in the telegram bot",
+      "done": true,
+      "created_at": "07/09/2026 17:48:01",
+      "done_at": "07/09/2026 19:11:32",
+      "filed_at": "07/09/2026 19:11:36"
+    },
+    {
+      "id": "Z5hE15zby1s",
+      "seq": 31,
+      "date": "2026-09-07",
+      "project": "Buy For Me",
+      "text": "if in the mail there are LILYA TADEVOSYAN name, then warn in the telegram bot message",
+      "done": false,
+      "created_at": "07/09/2026 17:48:54",
+      "done_at": null,
+      "filed_at": null
+    },
+    {
+      "id": "Ag-l2eTyNN8",
+      "seq": 32,
+      "date": "2026-09-07",
+      "project": "Buy For Me",
+      "text": "only tracking id's messages bot will send",
+      "done": false,
+      "created_at": "07/09/2026 17:54:49",
+      "done_at": null,
+      "filed_at": null
+    },
+    {
+      "id": "imI5AmzoV9s",
+      "seq": 33,
+      "date": "2026-09-07",
+      "project": "Logistics",
+      "text": "Tsovinar telegram bot for \"hertakan hamar\"",
+      "done": false,
+      "created_at": "07/09/2026 18:25:46",
+      "done_at": null,
       "filed_at": null
     }
   ],
   "projects": [
+    "Logistics",
     "Buy For Me",
-    "Logistics"
+    "ai-agents-scores",
+    "ONEX-Academy",
+    "FPL Captain"
   ]
 }

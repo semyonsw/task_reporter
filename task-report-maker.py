@@ -484,6 +484,155 @@ def _ensure_workbook():
         _create_workbook()
 
 
+# ---------------------------------------------------------------------------
+# One day, one cell
+# ---------------------------------------------------------------------------
+#
+# A day is a row.  Filing a report for a day that is already in the sheet grows
+# that day's cell instead of starting another row: the new text goes a blank
+# line under what is there, and the Date-Time moves on to the newer of the two
+# stamps, so the row always says when the day's work was last added to.  Only a
+# new day starts a new row.
+#
+# Every write goes through _write_one_report, which is what keeps the two
+# routes into the sheet - a report filed now, and a report merged in from the
+# pending queue later - from disagreeing about it.
+
+# A blank line between one report and the next, matching the blank line
+# compose_report_text already puts between two projects.
+REPORT_JOIN = "\n\n"
+
+
+def _row_date_key(value) -> str:
+    """The day a Date-Time cell belongs to as YYYY-MM-DD, or "" if unreadable.
+
+    Rows this app wrote are strings; rows typed straight into Excel come back
+    as datetimes, and a cell nobody has touched since could be either.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime(DATE_STORE_FORMAT)
+
+    text = str(value).strip()
+    if not text:
+        return ""
+    for fmt in (TIMESTAMP_FORMAT, "%d/%m/%Y %H:%M", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(text, fmt).strftime(DATE_STORE_FORMAT)
+        except ValueError:
+            continue
+    # Anything else still begins with the date, so read just that.
+    try:
+        return datetime.strptime(text.split()[0], "%d/%m/%Y").strftime(
+            DATE_STORE_FORMAT
+        )
+    except (ValueError, IndexError):
+        return ""
+
+
+def _parse_stamp(value):
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.strptime(str(value).strip(), TIMESTAMP_FORMAT)
+    except (ValueError, TypeError):
+        return None
+
+
+def _later_stamp(existing, incoming: str) -> str:
+    """The newer of two stamps for the same day.
+
+    Normally the incoming one, since it was just written.  The comparison is
+    here for the backlog case: a day's tasks ticked off at 09:00 and then more
+    of them at 17:00 must not drag the row's clock time backwards.
+    """
+    was = _parse_stamp(existing)
+    now = _parse_stamp(incoming)
+    if was is None or now is None:
+        return incoming
+    return incoming if now >= was else was.strftime(TIMESTAMP_FORMAT)
+
+
+def _find_day_row(ws, date_key: str) -> int:
+    """The row this day already occupies, or 0 if it has none.
+
+    Searched bottom-up, so a day left with several rows by an older version of
+    this app grows the last of them rather than the first.
+    """
+    if not date_key:
+        return 0
+    for row in range(ws.max_row, 1, -1):
+        if _row_date_key(ws.cell(row=row, column=1).value) == date_key:
+            return row
+    return 0
+
+
+def _write_one_report(ws, timestamp: str, text: str):
+    """Put one report into the sheet, merging it into its day where there is one."""
+    row = _find_day_row(ws, _row_date_key(timestamp))
+    if not row:
+        ws.append([timestamp, text])
+        return
+
+    existing = ws.cell(row=row, column=2).value
+    existing = "" if existing is None else str(existing).rstrip()
+    if not existing:
+        merged = text
+    elif len(existing) + len(REPORT_JOIN) + len(text) > EXCEL_MAX_CELL:
+        # A second row for the day beats a report that will not fit in a cell.
+        ws.append([timestamp, text])
+        return
+    else:
+        merged = existing + REPORT_JOIN + text
+
+    ws.cell(
+        row=row,
+        column=1,
+        value=_later_stamp(ws.cell(row=row, column=1).value, timestamp),
+    )
+    ws.cell(row=row, column=2, value=merged)
+
+
+def existing_report_days() -> dict:
+    """{YYYY-MM-DD: characters already filed for that day}.
+
+    What the filing preview needs to say whether a day will grow a row or
+    start one, and to size the result against what a cell holds.  Queued
+    reports count: they are going to merge into the same day themselves.
+    """
+    days = {}
+    with _EXCEL_LOCK:
+        if os.path.exists(EXCEL_FILE_PATH):
+            try:
+                wb = openpyxl.load_workbook(EXCEL_FILE_PATH, read_only=True)
+                ws = wb.active
+                first = True
+                for row in ws.iter_rows(values_only=True):
+                    if first:
+                        first = False
+                        continue
+                    key = _row_date_key(row[0])
+                    if not key:
+                        continue
+                    text = str(row[1]) if len(row) > 1 and row[1] is not None else ""
+                    # Later rows win, because _find_day_row takes the last one.
+                    days[key] = len(text.rstrip())
+                wb.close()
+            except Exception:
+                days = {}
+
+        for timestamp, report in _read_pending():
+            key = _row_date_key(timestamp)
+            if not key:
+                continue
+            if days.get(key):
+                days[key] += len(REPORT_JOIN) + len(report)
+            else:
+                days[key] = len(report)
+    return days
+
+
 def _queue_pending(timestamp: str, text: str):
     with open(PENDING_FILE_PATH, "a", encoding="utf-8") as fh:
         fh.write(json.dumps({"timestamp": timestamp, "report": text}) + "\n")
@@ -538,7 +687,7 @@ def flush_pending_reports() -> int:
             wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
             ws = wb.active
             for timestamp, report in entries:
-                ws.append([timestamp, report])
+                _write_one_report(ws, timestamp, report)
             _style_report_cells(ws)
             wb.save(EXCEL_FILE_PATH)
         except Exception:
@@ -548,7 +697,12 @@ def flush_pending_reports() -> int:
 
 
 def append_report_to_excel(report_text: str, timestamp: str = None) -> str:
-    """Append a report and return the timestamp that was written.
+    """File a report and return the timestamp that was written.
+
+    A day already in the sheet is added to rather than repeated: see
+    _write_one_report.  So this appends a row for a new day and grows the
+    existing cell for a day already there, and the caller does not have to
+    know which happened.
 
     `timestamp` is for reports that belong to a day other than today - the task
     board files a backlog under the date its tasks were listed against, not the
@@ -576,8 +730,8 @@ def append_report_to_excel(report_text: str, timestamp: str = None) -> str:
             wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
             ws = wb.active
             for queued_timestamp, queued_report in pending:
-                ws.append([queued_timestamp, queued_report])
-            ws.append([timestamp, text])
+                _write_one_report(ws, queued_timestamp, queued_report)
+            _write_one_report(ws, timestamp, text)
             _style_report_cells(ws)
             wb.save(EXCEL_FILE_PATH)
         except (PermissionError, OSError) as exc:
@@ -700,6 +854,132 @@ def update_report_in_excel(row_index: int, new_datetime: str, new_text: str):
         _style_report_cells(ws)
         wb.save(EXCEL_FILE_PATH)
         compact_excel()
+
+
+def plan_day_merge() -> list:
+    """Which days in the sheet are still spread over more than one row.
+
+    Nothing writes a second row for a day any more, so this only ever finds
+    rows written before that was true - which is why merging them is a command
+    to run once rather than something that happens on its own.
+    """
+    rows = load_reports_from_excel()
+    order = []
+    seen = {}
+    for stamp, text in rows:
+        key = _row_date_key(stamp)
+        if not key:
+            continue
+        if key not in seen:
+            seen[key] = []
+            order.append(key)
+        seen[key].append((stamp, text))
+
+    return [
+        {
+            "date": key,
+            "dateLabel": display_date(key),
+            "rows": len(seen[key]),
+            "chars": sum(len(t) for _, t in seen[key])
+            + len(REPORT_JOIN) * (len(seen[key]) - 1),
+        }
+        for key in order
+        if len(seen[key]) > 1
+    ]
+
+
+def merge_existing_days() -> dict:
+    """Fold every day that has several rows into one row per day.
+
+    The text is joined in the order the rows are already in, a blank line
+    between each, and the day keeps its latest stamp.  A day whose rows will
+    not fit in one cell is left as however many rows it needs.
+
+    Rows whose Date-Time cannot be read as a date are left exactly where they
+    are: there is no way to tell which day they belong to, and guessing would
+    move somebody's report.
+
+    This rewrites the sheet, so - like editing a report - it is refused while
+    Excel has the workbook open, where the rewrite would be silently undone.
+    """
+    with _EXCEL_LOCK:
+        _refuse_if_excel_has_it()
+        flush_pending_reports()
+        if not os.path.exists(EXCEL_FILE_PATH):
+            return {"ok": False, "merged": 0, "rowsRemoved": 0}
+
+        wb = openpyxl.load_workbook(EXCEL_FILE_PATH)
+        ws = wb.active
+
+        original = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row is None:
+                continue
+            stamp = row[0]
+            text = str(row[1]) if len(row) > 1 and row[1] is not None else ""
+            if not str(stamp or "").strip() and not text.strip():
+                continue
+            original.append((stamp, text.rstrip()))
+
+        # One slot per day, in the order the days first appear, so the sheet
+        # keeps the running order it already had.
+        slots = []
+        index = {}
+        for stamp, text in original:
+            key = _row_date_key(stamp)
+            if not key:
+                slots.append([None, [(stamp, text)]])
+                continue
+            if key in index:
+                index[key][1].append((stamp, text))
+            else:
+                slot = [key, [(stamp, text)]]
+                index[key] = slot
+                slots.append(slot)
+
+        merged_days = 0
+        final = []
+        for key, entries in slots:
+            if key is None or len(entries) == 1:
+                final.extend(
+                    (_format_cell_timestamp(stamp), text) for stamp, text in entries
+                )
+                continue
+
+            stamp = _format_cell_timestamp(entries[0][0])
+            for other, _ in entries[1:]:
+                stamp = _later_stamp(stamp, _format_cell_timestamp(other))
+
+            # Filled a cell at a time, so an over-long day stays split rather
+            # than losing the overflow.
+            chunks = [""]
+            for _, text in entries:
+                if not text:
+                    continue
+                if not chunks[-1]:
+                    chunks[-1] = text
+                elif len(chunks[-1]) + len(REPORT_JOIN) + len(text) <= EXCEL_MAX_CELL:
+                    chunks[-1] += REPORT_JOIN + text
+                else:
+                    chunks.append(text)
+
+            if len(chunks) < len(entries):
+                merged_days += 1
+            final.extend((stamp, chunk) for chunk in chunks if chunk)
+
+        removed = len(original) - len(final)
+        if not merged_days:
+            wb.close()
+            return {"ok": True, "merged": 0, "rowsRemoved": 0}
+
+        for row in range(ws.max_row, 1, -1):
+            ws.delete_rows(row)
+        for stamp, text in final:
+            ws.append([stamp, text])
+        # Widths left alone, for the same reason compact_excel leaves them.
+        _style_report_cells(ws)
+        wb.save(EXCEL_FILE_PATH)
+        return {"ok": True, "merged": merged_days, "rowsRemoved": removed}
 
 
 # ---------------------------------------------------------------------------
@@ -1133,8 +1413,9 @@ def _bucket_timestamp(date_iso: str) -> str:
 def preview_filing() -> list:
     """What filing would write, without writing it.
 
-    One entry per day, oldest first, so the rows land in the workbook in the
-    same order the days happened.
+    One entry per day, oldest first, so the days land in the workbook in the
+    order they happened.  An entry is not necessarily a new row: a day already
+    in the sheet is added to its existing cell, which `appendsToExisting` says.
     """
     ready = unfiled_checked_tasks()
     if not ready:
@@ -1144,10 +1425,21 @@ def preview_filing() -> list:
     for task in ready:
         by_date.setdefault(task["date"], []).append(task)
 
+    already = existing_report_days()
+
     groups = []
     for date_iso in sorted(by_date):
         day_tasks = sorted(by_date[date_iso], key=lambda task: task["seq"])
         text = compose_report_text(day_tasks)
+
+        # A day already in the sheet grows its cell rather than adding a row -
+        # unless the two together would not fit in one, which is the one case
+        # _write_one_report starts a second row for.  The preview has to say
+        # whichever of those is actually going to happen.
+        existing_length = already.get(date_iso, 0)
+        joined = existing_length + len(REPORT_JOIN) + len(text)
+        appends = bool(existing_length) and joined <= EXCEL_MAX_CELL
+
         groups.append(
             {
                 "date": date_iso,
@@ -1155,6 +1447,9 @@ def preview_filing() -> list:
                 "timestamp": _bucket_timestamp(date_iso),
                 "text": text,
                 "length": len(text),
+                "existingLength": existing_length,
+                "totalLength": joined if appends else len(text),
+                "appendsToExisting": appends,
                 "taskCount": len(day_tasks),
                 "taskIds": [task["id"] for task in day_tasks],
                 "projects": [
@@ -2706,6 +3001,13 @@ kbd {
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .pv-warn { color: #F59E0B; }
+/* Said before the text, because where a report lands is as much a part of the
+   preview as what it says. */
+.pv-merge {
+  margin-bottom: 8px; padding: 8px 12px; border-radius: 8px;
+  background: #101A2E; border: 1px solid #23375E; color: #8FA9E8;
+  font-size: 12px; line-height: 1.55;
+}
 .pv-locked {
   flex: none; padding: 10px 14px; border-radius: 8px;
   background: #2A2010; border: 1px solid #5B4420; color: #F0B860;
@@ -3920,9 +4222,16 @@ async function startFiling() {
 function renderPreview() {
   const rows = previewGroups.length;
   const tasks = previewGroups.reduce((sum, group) => sum + group.taskCount, 0);
+
+  // A day already in the sheet is added to its cell rather than given a row of
+  // its own, so counting every group as a new row would overstate it.
+  const grown = previewGroups.filter((group) => group.appendsToExisting).length;
+  const fresh = rows - grown;
+  const parts = [];
+  if (fresh) parts.push(fresh + (fresh === 1 ? " new row" : " new rows"));
+  if (grown) parts.push(grown + (grown === 1 ? " day" : " days") + " added to");
   $("previewCount").textContent =
-    tasks + (tasks === 1 ? " task" : " tasks") + " → " +
-    rows + (rows === 1 ? " report row" : " report rows");
+    tasks + (tasks === 1 ? " task" : " tasks") + " → " + parts.join(" + ");
 
   // Excel holding the workbook is worth saying before the button is pressed,
   // not after: the rows go to the queue instead of the sheet.
@@ -3944,16 +4253,25 @@ function renderPreview() {
     const head = el("div", "pv-head");
     head.appendChild(el("span", "pv-when", group.timestamp));
     const over = group.length > CFG.maxCell;
-    head.appendChild(
-      el(
-        "span",
-        "pv-note" + (over ? " pv-warn" : ""),
-        group.taskCount + " task" + (group.taskCount === 1 ? "" : "s") +
-          " · " + group.length + " chars" +
-          (over ? " · too long for one cell" : "")
-      )
-    );
+    let note =
+      group.taskCount + " task" + (group.taskCount === 1 ? "" : "s") +
+      " · " + group.length + " chars";
+    if (over) note += " · too long for one cell";
+    else if (group.appendsToExisting) note += " · goes under this day's report";
+    head.appendChild(el("span", "pv-note" + (over ? " pv-warn" : ""), note));
     node.appendChild(head);
+
+    if (group.appendsToExisting) {
+      node.appendChild(
+        el(
+          "div",
+          "pv-merge",
+          "Added a blank line under the " + group.existingLength +
+            " characters already filed for " + group.dateLabel +
+            ", and that row's time moves to " + group.timestamp + "."
+        )
+      );
+    }
 
     node.appendChild(el("pre", "pv-body", group.text));
     wrap.appendChild(node);
@@ -4936,6 +5254,47 @@ def _print_cli_banner(dual: bool):
     print("-" * 68)
 
 
+def cli_merge_days(dry_run: bool = False) -> int:
+    """--merge-days: one row per day for a workbook that predates that rule."""
+    plan = plan_day_merge()
+    if not plan:
+        print("  Every day in the workbook is already a single row.")
+        return 0
+
+    print(f"  {len(plan)} day(s) are spread over more than one row:")
+    for day in plan:
+        print(
+            f"    {day['dateLabel']}  {day['rows']} rows -> 1 row "
+            f"({day['chars']} chars)"
+        )
+
+    if dry_run:
+        print()
+        print("  Nothing was written (--dry-run). Drop --dry-run to merge them.")
+        return 0
+
+    if workbook_is_open_in_excel():
+        print()
+        print(f"  {EXCEL_FILE_NAME} is open in Excel. Close it and run this again -")
+        print("  rewriting the sheet now would be undone the next time Excel saves.")
+        return 1
+
+    try:
+        result = merge_existing_days()
+    except PermissionError as exc:
+        print(f"  {exc}")
+        return 1
+    except Exception as exc:
+        print(f"  The workbook could not be rewritten: {exc}")
+        return 1
+
+    print()
+    print(
+        f"  Merged {result['merged']} day(s), {result['rowsRemoved']} fewer row(s)."
+    )
+    return 0
+
+
 def _print_recent_reports(limit: int = 10):
     rows = load_reports_from_excel()
     if not rows:
@@ -5251,14 +5610,26 @@ def _cli_remove_tasks(words: list):
 
 
 def _print_filing_preview(groups: list):
+    grown = sum(1 for group in groups if group["appendsToExisting"])
+    fresh = len(groups) - grown
+    where = []
+    if fresh:
+        where.append(f"{fresh} new row(s)")
+    if grown:
+        where.append(f"{grown} day(s) added to")
     print(
         f"  {sum(g['taskCount'] for g in groups)} ticked task(s) "
-        f"-> {len(groups)} report row(s):"
+        f"-> {' + '.join(where)}:"
     )
     for group in groups:
         print()
         print(f"    {group['timestamp']}   ({group['taskCount']} task(s), "
               f"{group['length']} chars)")
+        if group["appendsToExisting"]:
+            print(
+                f"      goes a blank line under the {group['existingLength']} "
+                f"characters already filed for {group['dateLabel']}"
+            )
         for line in group["text"].splitlines():
             print(f"      | {line}" if line else "      |")
 
@@ -6272,6 +6643,22 @@ def main(argv: list) -> int:
         ),
     )
     parser.add_argument(
+        "--merge-days",
+        dest="merge_days",
+        action="store_true",
+        help=(
+            "Fold days that already have several rows in the workbook into one "
+            "row each and exit. Only needed once, on a workbook written before "
+            "a day became a single cell; use --dry-run to see it first"
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="With --merge-days, report what would change and write nothing",
+    )
+    parser.add_argument(
         "--file-checked",
         dest="file_checked",
         action="store_true",
@@ -6324,6 +6711,9 @@ def main(argv: list) -> int:
     if args.board:
         _print_board(show_filed=True)
         return 0
+
+    if args.merge_days:
+        return cli_merge_days(dry_run=args.dry_run)
 
     session = ReporterSession()
     _install_signal_handlers(session)
