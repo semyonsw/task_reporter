@@ -47,9 +47,9 @@ if not exist "%PROJ%\.winenv\Scripts\python.exe" (
 )
 
 "%PROJ%\.winenv\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel || exit /b 1
-"%PROJ%\.winenv\Scripts\python.exe" -m pip install openpyxl pywebview pyinstaller || (
+"%PROJ%\.winenv\Scripts\python.exe" -m pip install openpyxl pywebview pystray pillow pyinstaller || (
     echo [ERROR] The build dependencies could not be installed.
     echo         Run Install.bat - it retries, diagnoses and explains failures.
     exit /b 1
 )
-"%PROJ%\.winenv\Scripts\python.exe" -c "import openpyxl,webview,PyInstaller;print('deps ok')"
+"%PROJ%\.winenv\Scripts\python.exe" -c "import openpyxl,webview,pystray,PIL,PyInstaller;print('deps ok')"

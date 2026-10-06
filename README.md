@@ -82,12 +82,13 @@ with the terminal), either works:
 ## The Windows app
 
 `TaskReporter.exe` is the whole program in one file: it serves the UI to
-itself and draws it in a real window with a real title bar and a real taskbar
-entry. Nothing else has to stay open — no terminal, no browser tab.
+itself and draws it in a real window with a taskbar entry. Nothing else has to
+stay open — no terminal, no browser tab.
 
 The window is exactly the page described in [The browser UI](#the-browser-ui),
 so everything below about the Report and Board views, the shortcuts and the
-history panel applies unchanged.
+history panel applies unchanged. What the window adds is its own title bar,
+the tray icon and quick add — see [The window, the tray and quick add](#the-window-the-tray-and-quick-add).
 
 ### Building it
 
@@ -103,7 +104,7 @@ windows\install_shortcut.bat   # Desktop + Start menu shortcuts
 ```
 
 `build.bat` creates a private virtual environment in `.winenv\` the first time
-it runs (openpyxl, pywebview and PyInstaller), then packages the same
+it runs (openpyxl, pywebview, pystray, Pillow and PyInstaller), then packages the same
 `task-report-maker.py` the Linux launcher runs. The exe carries its own Python,
 so nothing needs to be installed for it to run.
 
@@ -119,10 +120,15 @@ window straight from the source file using that same environment.
 
 The same `task_reports.xlsx` and `task_board.json` as every other surface. The
 exe finds them the way `task_reporter.bat` does — `%TASK_REPORT_DIR%` if it is
-set, then the folder the exe is sitting in if that folder holds the data, then
-the project path recorded when it was built. So a copy of the exe carried
-somewhere else still files into the real workbook, and `%TASK_REPORT_DIR%`
-overrides all of it if the project ever moves.
+set, then the folder chosen in **Settings → Files → Change…**, then the folder
+the exe is sitting in if that folder holds the data, then the project path
+recorded when it was built. So a copy of the exe carried somewhere else still
+files into the real workbook, and `%TASK_REPORT_DIR%` overrides all of it if
+the project ever moves. Settings shows which of these it went by.
+
+The folder chosen in Settings is kept in `%LOCALAPPDATA%\TaskReporter\settings.json`
+(with the theme, the tray choice and the shortcut), not in the data folder,
+and is used from the next start.
 
 That path matters because a packaged app cannot use the folder its code is in:
 PyInstaller unpacks itself into a temporary directory that is deleted on exit,
@@ -131,7 +137,7 @@ which is exactly where a workbook must never be written.
 ### One window, not several
 
 Launching it again while it is already open raises the window that is there
-rather than opening a second one. The running app records its address in
+— even one closed into the tray — rather than opening a second one. The running app records its address in
 `.task_reporter_app.lock`, and the second launch hands the request over and
 exits. If that file is ever left behind by a crash it simply fails to answer
 and is cleared, so it can never block a start-up.
@@ -166,6 +172,73 @@ did, which is why it stays opt-in.
 What the window does not have is the terminal console and its `:t` commands.
 Everything they do is on the Board view; for scripting, the Linux launcher and
 its flags are unchanged.
+
+### The window, the tray and quick add
+
+The window has no Windows frame; it draws its own 40 px title bar with
+minimise, maximise/restore and close. Moving and resizing are still Windows'
+own — the title bar is handed to Windows as the caption (WebView2's
+`app-region: drag`), and the 6 px edges as the border — so dragging to the
+screen edges snaps, Win+arrow keys work, double-clicking the title bar
+maximises, and Alt+F4 closes. Maximising stops at the taskbar. Windows 11's
+snap-layout flyout on hovering the maximise button is the one thing a drawn
+title bar cannot offer.
+
+A **tray icon** runs as long as the app does. Left-click it, or press
+**Ctrl + Alt + T** anywhere in Windows, for **Quick add**: a small window above
+the taskbar with the day, the project and the task, which takes a pasted or
+dropped file too. Enter adds the task and the window goes away; Esc or
+clicking elsewhere closes it, but only when it is empty — otherwise it asks.
+Right-click the icon for Open Task Reporter, Quick add task…, Previous
+reports and Quit.
+
+With **Settings → System tray → Keep in tray** on, closing the window hides it
+in the tray instead of quitting; Quit in the tray menu is then what ends the
+app. The shortcut can be changed in the same place. Both need `pystray`,
+which the build installs; without it the app runs as before, with no tray.
+
+## Working in it
+
+These are the same in the window and in a browser tab.
+
+- **Nothing typed is lost.** The report you are writing, the task in the add
+  box and an open edit dialog are kept in the page's storage as you type, and
+  come back after a crash, a reload or a closed window ("Restored unsaved
+  changes"). Clicking outside a changed Edit Task or Edit Report dialog, Esc,
+  Cancel or ✕ no longer throws the change away: a *Save changes?* prompt
+  offers Save, Keep editing (the default) and Discard. Closing the window
+  with a changed dialog open asks the same thing. Ctrl+Enter saves a dialog.
+- **Tasks can be more than one line.** In the add box, Enter adds the task and
+  Shift+Enter starts a new line; the box grows to five lines. The extra lines
+  are filed indented under the bullet.
+- **Task files.** Open a task to attach screenshots, CSVs or any file — the
+  *Add files…* button, a drop onto the dialog, or Ctrl+V of an image (saved
+  as `pasted-YYYYMMDD-HHMMSS.png`). They are kept in `task_files\<task id>\`
+  beside the workbook, up to 50 MB each, and a task with files shows a
+  paperclip with the count. *Copy image* puts a picture on the clipboard
+  ready to paste into an AI chat; *Copy path* gives the full Windows path;
+  *Open* and *Show in folder* do what they say. Adding or removing files is
+  part of the edit, committed by Save. Removed files and the files of deleted
+  tasks go to `task_files\.trash\`, so Undo can bring them back. Filing never
+  puts files into the workbook.
+- **Board filter, order and copy.** The project chips under the add box show
+  one project at a time (filing still takes every ticked task, and the
+  preview says so). Drag a task by its grip to reorder it within its day, or
+  drop it on another project's header to move it there; Alt+↑ / Alt+↓ does
+  the same from the keyboard. The filed report follows the order on screen.
+  *Copy day* copies a day exactly as it would be filed.
+- **Undo instead of "are you sure?".** Deleting a task, Clear Filed and
+  deleting a report happen at once and offer Undo for 6 seconds (or Ctrl+Z
+  outside a text box). File Checked Tasks offers it too when the rows went
+  straight into the workbook.
+- **Previous reports** is a panel from the right (Ctrl+H) with a search box —
+  text or date, so `07/09` works — and a project filter. Reports queued while
+  Excel has the workbook are listed first, marked QUEUED.
+- **Excel banner.** While Excel has `task_reports.xlsx` open, or reports are
+  waiting in the queue, a red strip under the header says so; queued reports
+  are written in as soon as Excel lets go of the file.
+- **Light, dark or system theme** — the moon/sun button, or Settings →
+  Appearance.
 
 ## The browser UI
 
@@ -445,8 +518,11 @@ becomes a line break.
 
 While Excel has `task_reports.xlsx` open, nothing is written to it. Reports are
 queued in `.task_reports_pending.jsonl` instead and merged in automatically once
-the file is free. Editing or deleting a report is refused outright with a "close
-it and try again" message, because those rewrite the whole sheet.
+the file is free — the app checks every few seconds, so that is as soon as
+Excel lets go, not at the next save. A red banner under the header says how
+many are waiting. Editing, deleting or restoring a report, and undoing a
+filing, are refused outright with a "close it and try again" message, because
+those rewrite the whole sheet.
 
 **Why it refuses rather than trying.** On a Windows drive reached through WSL —
 which is where this project normally lives — Excel's lock does not reach Python

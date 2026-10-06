@@ -26,8 +26,8 @@ $App = @{
     MinPython     = '3.10'
     Venv          = '.winenv'          # the name windows\build.bat has always used
     Requirements  = $null
-    PipExtra      = @('openpyxl', 'pywebview', 'pyinstaller')
-    VerifyImports = @('openpyxl', 'webview', 'PyInstaller')
+    PipExtra      = @('openpyxl', 'pywebview', 'pystray', 'pillow', 'pyinstaller')
+    VerifyImports = @('openpyxl', 'webview', 'pystray', 'PIL', 'PyInstaller')
 
     MinNode       = $null
     NpmDirs       = @()

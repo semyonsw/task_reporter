@@ -36,8 +36,15 @@ a = Analysis(
     binaries=conda_runtime_dlls(),
     # Recorded so the exe can still find the workbook after it is copied or
     # shortcutted somewhere else - see _resolve_base_dir().
-    datas=[(os.path.join(SPECPATH, "project_home.txt"), ".")],
-    hiddenimports=[],
+    # The icon is also the title bar's, the tray's and the page's favicon -
+    # the app reads it from the bundle at run time.
+    datas=[
+        (os.path.join(SPECPATH, "project_home.txt"), "."),
+        (os.path.join(SPECPATH, "TaskReporter.ico"), "."),
+    ],
+    # pystray picks its backend by name at import time, which PyInstaller
+    # cannot see.
+    hiddenimports=["pystray._win32"],
     hookspath=[],
     runtime_hooks=[],
     # The Qt window is a Linux/WSLg fallback and would add ~150 MB here for a

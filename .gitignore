@@ -9,6 +9,11 @@ __pycache__/
 task_board.json.bad
 task_board.json.tmp
 
+# task files: removed ones wait in the trash so Undo can bring them back, and
+# an upload is written to a .part file before it is moved into place
+task_files/.trash/
+task_files/**/.*.part
+
 # the packaged Windows app: the build venv, PyInstaller's scratch folders,
 # the built exe, and the path baked into it at build time
 .winenv/

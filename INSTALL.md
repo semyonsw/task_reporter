@@ -19,7 +19,8 @@ Everything below is only here for when that does not work.
    3.12 for you with `winget`. Nothing is hardcoded to one machine's paths.
 2. Creates the private build environment `.winenv\`, reusing an existing one
    only if it is healthy.
-3. Installs `openpyxl`, `pywebview` and `pyinstaller` into it, retrying with a
+3. Installs `openpyxl`, `pywebview`, `pystray`, `pillow` (the tray icon) and
+   `pyinstaller` into it, retrying with a
    longer timeout, then relaxed certificate checks, then pre-built wheels only.
 4. Runs the app from source (`--board`) to prove it works before packaging it.
 5. **Builds `TaskReporter.exe`** with PyInstaller — the whole app in one file,
@@ -30,7 +31,8 @@ Everything below is only here for when that does not work.
    and in the Start menu.
 
 Everything is logged to `install.log`. Re-running is safe. `task_reports.xlsx`
-and `task_board.json` are never touched by the installer.
+and `task_board.json` are never touched by the installer (nor are the
+`task_files\` folder or the app's own `%LOCALAPPDATA%\TaskReporter\settings.json`).
 
 ### On Linux / macOS / WSL — `./install.sh`
 
