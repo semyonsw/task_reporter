@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 79,
+  "seq": 81,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -984,10 +984,10 @@
       "date": "2026-10-07",
       "project": "ai-agents-scores",
       "text": "Read Anna's feedback and make out of them xelqy glxit tasks, and start doing them",
-      "done": false,
+      "done": true,
       "created_at": "07/10/2026 18:06:18",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "07/10/2026 20:50:59",
+      "filed_at": "07/10/2026 20:51:01",
       "files": []
     },
     {
@@ -1028,11 +1028,49 @@
       "done_at": null,
       "filed_at": null,
       "files": []
+    },
+    {
+      "id": "dbBzrxQfZFI",
+      "seq": 80,
+      "order": null,
+      "date": "2026-10-07",
+      "project": "ai-agents-scores",
+      "text": "user feedback:\n```5 էր տվյալ թիքեթի միջին գնահատականը, երբ էս մի կրիտերիայում դարձրեցի 0 փոխվեց գլխավորը՝ 4.89/5, բայց ավելի կարևորա ոչ թե ամեն կրիտերիայի մոտ նշվի EDITED այլ թիքեթի վերջնական միջին գնահատկանինը, կարա՞նք դա էլ փոխենք\n```\n\nmake out of that a nice task",
+      "done": false,
+      "created_at": "07/10/2026 20:40:13",
+      "done_at": null,
+      "filed_at": null,
+      "files": [
+        {
+          "name": "pasted-20261007-204300.png",
+          "size": 262029,
+          "added_at": "07/10/2026 20:43:01"
+        }
+      ]
+    },
+    {
+      "id": "LfIYFQ1DKwM",
+      "seq": 81,
+      "order": null,
+      "date": "2026-10-07",
+      "project": "ai-agents-scores",
+      "text": "user gave this feedback:\n```\nԿարևոր բան չեմ գրում, բայց եթե բարդ բան չի թիքեթի համարի մոտ էլ քոփիի կոճակ դնենք, սա կօգնի ավելորդ լադեսկի թաբ չբացելով մեր գնահատման հարթակում սրչ անել արդյոք էդ թիքեթը մենք գնահատել ենք, թե չէ \n\nգլխավոր գնահատկանի քոփին էլ կարևոր չի, բայց որ առաջարկեցիր նշում եմ, որ հիշենք, անելուց քեզ հարմար լինի միանգամից 2 տեղ ավելացնել\n```\n\nmake out of this a nice task",
+      "done": false,
+      "created_at": "07/10/2026 20:42:29",
+      "done_at": null,
+      "filed_at": null,
+      "files": [
+        {
+          "name": "pasted-20261007-204310.png",
+          "size": 75265,
+          "added_at": "07/10/2026 20:43:11"
+        }
+      ]
     }
   ],
   "projects": [
-    "task-report",
     "ai-agents-scores",
+    "task-report",
     "Blot",
     "cc-kpi-onex",
     "DealFinder",
