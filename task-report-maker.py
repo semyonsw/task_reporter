@@ -25,7 +25,6 @@ try:
         QLabel,
         QPlainTextEdit,
         QPushButton,
-        QProgressBar,
         QFrame,
         QMenu,
         QMessageBox,
@@ -215,9 +214,6 @@ TASK_FILES_DIR = os.path.join(BASE_DIR, "task_files")
 TASK_FILES_TRASH = os.path.join(TASK_FILES_DIR, ".trash")
 MAX_TASK_FILE_BYTES = 50 * 1024 * 1024
 
-MAX_REPORT_LENGTH = 2000
-MAX_TASK_LENGTH = 600
-MAX_PROJECT_LENGTH = 60
 TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S"
 # Dates are stored ISO (sortable) and shown the way the task list writes them.
 DATE_STORE_FORMAT = "%Y-%m-%d"
@@ -1246,11 +1242,11 @@ def _empty_board() -> dict:
 
 
 def _clean_project_names(raw) -> list:
-    """Trim, cap and de-duplicate a list of project names, keeping its order."""
+    """Trim and de-duplicate a list of project names, keeping its order."""
     names = []
     seen = set()
     for item in raw or []:
-        name = str(item or "").strip()[:MAX_PROJECT_LENGTH]
+        name = str(item or "").strip()
         if name and name.lower() not in seen:
             seen.add(name.lower())
             names.append(name)
@@ -1264,7 +1260,7 @@ def _remember_project(board: dict, name: str):
     project dropdown has to keep offering "onex-academy" after that day's tasks
     have been filed and cleared off the board.
     """
-    name = str(name or "").strip()[:MAX_PROJECT_LENGTH]
+    name = str(name or "").strip()
     if not name:
         return
     board["projects"] = [name] + [
@@ -1291,8 +1287,8 @@ def _clean_task(raw, seq_hint: int) -> dict:
         # "never moved", which sorts by seq - see _task_position.
         "order": order,
         "date": normalise_date(raw.get("date")),
-        "project": str(raw.get("project") or "").strip()[:MAX_PROJECT_LENGTH],
-        "text": text[:MAX_TASK_LENGTH],
+        "project": str(raw.get("project") or "").strip(),
+        "text": text,
         "done": bool(raw.get("done")),
         "created_at": str(raw.get("created_at") or "").strip(),
         "done_at": str(raw.get("done_at") or "").strip() or None,
@@ -1461,10 +1457,6 @@ def add_task(date, project: str, text: str) -> dict:
     text = str(text or "").strip()
     if not text:
         raise ValueError("The task cannot be empty.")
-    if len(text) > MAX_TASK_LENGTH:
-        raise ValueError(
-            f"Task is too long ({len(text)} chars). The limit is {MAX_TASK_LENGTH}."
-        )
 
     with _BOARD_LOCK:
         board = _read_board()
@@ -1473,7 +1465,7 @@ def add_task(date, project: str, text: str) -> dict:
             "id": secrets.token_urlsafe(8),
             "seq": board["seq"],
             "date": normalise_date(date),
-            "project": str(project or "").strip()[:MAX_PROJECT_LENGTH],
+            "project": str(project or "").strip(),
             "text": text,
             "done": False,
             "created_at": datetime.now().strftime(TIMESTAMP_FORMAT),
@@ -1494,11 +1486,6 @@ def update_task(task_id: str, **changes) -> dict:
         text = str(changes["text"] or "").strip()
         if not text:
             raise ValueError("The task cannot be empty.")
-        if len(text) > MAX_TASK_LENGTH:
-            raise ValueError(
-                f"Task is too long ({len(text)} chars). "
-                f"The limit is {MAX_TASK_LENGTH}."
-            )
         changes["text"] = text
 
     with _BOARD_LOCK:
@@ -1510,7 +1497,7 @@ def update_task(task_id: str, **changes) -> dict:
                 task["text"] = changes["text"]
             if "project" in changes:
                 task["project"] = (
-                    str(changes["project"] or "").strip()[:MAX_PROJECT_LENGTH]
+                    str(changes["project"] or "").strip()
                 )
                 _remember_project(board, task["project"])
             if "date" in changes:
@@ -2217,23 +2204,6 @@ QLabel#statusLabel {
     background: transparent;
 }
 
-QProgressBar#progressBar {
-    background-color: #1E2640;
-    border: none;
-    border-radius: 4px;
-    min-height: 8px;
-    max-height: 8px;
-}
-QProgressBar#progressBar::chunk {
-    background-color: #3B82F6;
-    border-radius: 4px;
-}
-
-QProgressBar#progressBar[danger="true"]::chunk {
-    background-color: #EF4444;
-    border-radius: 4px;
-}
-
 QLabel#counterLabel {
     font-size: 13px;
     color: #5B6EA6;
@@ -2510,14 +2480,6 @@ class EditReportDialog(QDialog):
         new_text = self.text_field.toPlainText().strip()
         if not new_text:
             QMessageBox.warning(self, "Warning", "Report text cannot be empty.")
-            return
-        if len(new_text) > MAX_REPORT_LENGTH:
-            QMessageBox.warning(
-                self,
-                "Warning",
-                f"Report is too long ({len(new_text)} chars).\n"
-                f"Limit is {MAX_REPORT_LENGTH} characters.",
-            )
             return
         try:
             update_report_in_excel(self._row_index, new_dt, new_text)
@@ -2808,16 +2770,7 @@ class TaskReporterApp(QMainWindow):
 
         footer.addStretch(1)
 
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setObjectName("progressBar")
-        self.progress_bar.setRange(0, MAX_REPORT_LENGTH)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setFixedWidth(200)
-        self.progress_bar.setProperty("danger", False)
-        footer.addWidget(self.progress_bar)
-
-        self.counter_label = QLabel(f"0 / {MAX_REPORT_LENGTH}")
+        self.counter_label = QLabel("0 chars")
         self.counter_label.setObjectName("counterLabel")
         self.counter_label.setProperty("danger", False)
         self.counter_label.setAlignment(
@@ -2932,20 +2885,8 @@ class TaskReporterApp(QMainWindow):
         text = self.editor.toPlainText()
         length = len(text)
 
-        self.counter_label.setText(f"{length} / {MAX_REPORT_LENGTH}")
-        self.progress_bar.setValue(min(length, MAX_REPORT_LENGTH))
-
-        over = length > MAX_REPORT_LENGTH
-        self._set_danger_prop(self.progress_bar, over)
-        self._set_danger_prop(self.counter_label, over)
-
-        if over:
-            self._set_status(
-                f"Report is too long  ({length - MAX_REPORT_LENGTH} chars over limit)",
-                danger=True,
-            )
-        else:
-            self._set_status("Ready", danger=False)
+        self.counter_label.setText(f"{length} chars")
+        self._set_status("Ready", danger=False)
 
     def _set_danger_prop(self, widget, danger: bool):
         widget.setProperty("danger", danger)
@@ -2967,19 +2908,6 @@ class TaskReporterApp(QMainWindow):
         if not report_text:
             self._set_status("Report cannot be empty", danger=True)
             QMessageBox.warning(self, "Warning", "The report cannot be empty!")
-            return
-
-        if len(report_text) > MAX_REPORT_LENGTH:
-            self._set_status(
-                f"Please keep report under {MAX_REPORT_LENGTH} characters",
-                danger=True,
-            )
-            QMessageBox.warning(
-                self,
-                "Warning",
-                f"Report is too long ({len(report_text)} chars).\n"
-                f"Limit is {MAX_REPORT_LENGTH} characters.",
-            )
             return
 
         try:
@@ -3404,11 +3332,7 @@ kbd {
 }
 .status { flex: 1; min-width: 120px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .status.success, .status.danger, .status.warn { color: var(--color-accent-700); }
-.progress { width: 140px; height: 6px; background: color-mix(in srgb, var(--color-text) 12%, transparent); flex: none; }
-.progress-fill { height: 100%; width: 0; background: var(--color-accent); transition: width .12s linear; }
-.progress-fill.danger { background: var(--color-accent-700); }
 .counter { min-width: 80px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
-.counter.danger { color: var(--color-accent-700); font-weight: 600; }
 .wide-btn { min-width: 156px; height: 40px; }
 
 /* Board */
@@ -3758,7 +3682,6 @@ kbd {
       <span class="hint"><b>Enter</b> new line · <b>Ctrl + Enter</b> save · drafts are kept if the window closes</span>
       <div class="footer">
         <span class="status" id="status">Ready</span>
-        <div class="progress"><div class="progress-fill" id="progressFill"></div></div>
         <span class="counter" id="counter"></span>
         <button class="btn btn-primary wide-btn" id="saveBtn">Save Report</button>
       </div>
@@ -3774,13 +3697,13 @@ kbd {
         <input type="date" id="taskDate" class="input c-date" title="The day this task belongs to">
         <div class="combo c-proj">
           <input type="text" id="taskProject" class="input" placeholder="project" spellcheck="false"
-                 maxlength="%%MAXPROJECT%%" role="combobox" aria-expanded="false"
+                 role="combobox" aria-expanded="false"
                  aria-autocomplete="list" aria-controls="taskProjectPanel"
                  title="Project name - becomes the [bracketed] header in the filed report">
           <button type="button" class="combo-caret" id="taskProjectCaret" tabindex="-1" aria-label="Show existing projects"><i data-icon="chevron" data-size="16" data-stroke="2"></i></button>
           <div class="combo-panel" id="taskProjectPanel" role="listbox"></div>
         </div>
-        <textarea id="taskText" class="input" rows="1" maxlength="%%MAXTASK%%"
+        <textarea id="taskText" class="input" rows="1"
                   placeholder="What needs doing&#8230;   Shift + Enter for a new line"></textarea>
         <button type="submit" class="btn btn-primary c-add"><i data-icon="plus" data-size="16" data-stroke="2.5"></i>Add Task</button>
       </form>
@@ -3917,7 +3840,7 @@ kbd {
         <label for="tProject">Project</label>
         <div class="combo">
           <input type="text" class="input" id="tProject" placeholder="(no project)" spellcheck="false" autocomplete="off"
-                 maxlength="%%MAXPROJECT%%" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="tProjectPanel">
+                 role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="tProjectPanel">
           <button type="button" class="combo-caret" id="tProjectCaret" tabindex="-1" aria-label="Show existing projects"><i data-icon="chevron" data-size="16" data-stroke="2"></i></button>
           <div class="combo-panel" id="tProjectPanel" role="listbox"></div>
         </div>
@@ -3925,7 +3848,7 @@ kbd {
     </div>
     <div class="field">
       <label for="tText">Task</label>
-      <textarea class="input" id="tText" maxlength="%%MAXTASK%%"></textarea>
+      <textarea class="input" id="tText"></textarea>
     </div>
     <div class="files" id="tFiles">
       <div class="files-head">
@@ -4020,13 +3943,13 @@ kbd {
     <div class="quick-row">
       <input class="input" type="date" id="qDate">
       <div class="combo">
-        <input class="input" id="qProject" placeholder="project" spellcheck="false" autocomplete="off" maxlength="%%MAXPROJECT%%"
+        <input class="input" id="qProject" placeholder="project" spellcheck="false" autocomplete="off"
                role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="qProjectPanel">
         <button type="button" class="combo-caret" id="qProjectCaret" tabindex="-1" aria-label="Show existing projects"><i data-icon="chevron" data-size="16" data-stroke="2"></i></button>
         <div class="combo-panel" id="qProjectPanel" role="listbox"></div>
       </div>
     </div>
-    <textarea class="input" id="qText" maxlength="%%MAXTASK%%" placeholder="What needs doing…   Shift + Enter for a new line"></textarea>
+    <textarea class="input" id="qText" placeholder="What needs doing…   Shift + Enter for a new line"></textarea>
     <div class="quick-files" id="qFiles"></div>
     <div class="quick-attach" id="qAttach">
       <i data-icon="paperclip" data-size="14" data-stroke="2"></i>
@@ -4053,7 +3976,6 @@ const $ = (id) => document.getElementById(id);
 const editor = $("editor");
 const statusEl = $("status");
 const counterEl = $("counter");
-const fillEl = $("progressFill");
 const saveBtn = $("saveBtn");
 
 function el(tag, cls, text) {
@@ -4404,15 +4326,10 @@ window.addEventListener("pagehide", () => { if (draftTimer) { clearTimeout(draft
 
 function updateCounter() {
   const length = editor.value.length;
-  const over = length > CFG.maxLength;
-  counterEl.textContent = length + " / " + CFG.maxLength;
-  counterEl.className = "counter" + (over ? " danger" : "");
-  fillEl.style.width = Math.min(100, (length / CFG.maxLength) * 100) + "%";
-  fillEl.className = "progress-fill" + (over ? " danger" : "");
-  saveBtn.disabled = saving || !editor.value.trim() || over;
+  counterEl.textContent = length + " chars";
+  saveBtn.disabled = saving || !editor.value.trim();
   if (statusTimer) return;
-  if (over) setStatus("Report is too long  (" + (length - CFG.maxLength) + " chars over limit)", "danger");
-  else setStatus("Ready", null);
+  setStatus("Ready", null);
 }
 
 let saving = false;
@@ -4421,11 +4338,6 @@ async function saveReport() {
   if (saving) return;
   const text = editor.value.trim();
   if (!text) { flashStatus("Report cannot be empty", "danger"); editor.focus(); return; }
-  if (text.length > CFG.maxLength) {
-    flashStatus("Please keep report under " + CFG.maxLength + " characters", "danger");
-    editor.focus();
-    return;
-  }
 
   saving = true;
   saveBtn.disabled = true;
@@ -4693,10 +4605,6 @@ async function saveEdit() {
   const error = $("editError");
 
   if (!text) { error.textContent = "Report text cannot be empty."; return false; }
-  if (text.length > CFG.maxLength) {
-    error.textContent = "Report is too long (" + text.length + " chars). Limit is " + CFG.maxLength + ".";
-    return false;
-  }
 
   error.textContent = "";
   try {
@@ -5715,10 +5623,6 @@ async function saveTaskEdit() {
   const error = $("tError");
   const text = $("tText").value.trim();
   if (!text) { error.textContent = "The task cannot be empty."; return false; }
-  if (text.length > CFG.maxTaskLength) {
-    error.textContent = "Task is too long (" + text.length + " chars). Limit is " + CFG.maxTaskLength + ".";
-    return false;
-  }
   error.textContent = "Saving…";
   const button = $("tSave");
   button.disabled = true;
@@ -6938,8 +6842,6 @@ def _render_web_page(token: str, app: bool = False, quick: bool = False) -> byte
     config = {
         "token": token,
         "clientId": secrets.token_urlsafe(9),
-        "maxLength": MAX_REPORT_LENGTH,
-        "maxTaskLength": MAX_TASK_LENGTH,
         "maxCell": EXCEL_MAX_CELL,
         "maxFileBytes": MAX_TASK_FILE_BYTES,
         "pingSeconds": 3,
@@ -6952,12 +6854,7 @@ def _render_web_page(token: str, app: bool = False, quick: bool = False) -> byte
         "app": bool(app),
         "mode": "quick" if quick else "main",
     }
-    page = (
-        WEB_PAGE_TEMPLATE
-        .replace("%%CONFIG%%", json.dumps(config))
-        .replace("%%MAXTASK%%", str(MAX_TASK_LENGTH))
-        .replace("%%MAXPROJECT%%", str(MAX_PROJECT_LENGTH))
-    )
+    page = WEB_PAGE_TEMPLATE.replace("%%CONFIG%%", json.dumps(config))
     return page.encode("utf-8")
 
 
@@ -7132,14 +7029,6 @@ def _web_save_report(session: "ReporterSession", payload: dict) -> dict:
     text = str(payload.get("text") or "").strip()
     if not text:
         return {"ok": False, "message": "The report cannot be empty."}
-    if len(text) > MAX_REPORT_LENGTH:
-        return {
-            "ok": False,
-            "message": (
-                f"Report is too long ({len(text)} chars). "
-                f"The limit is {MAX_REPORT_LENGTH}."
-            ),
-        }
     try:
         timestamp = append_report_to_excel(text)
     except ReportQueuedError as exc:
@@ -7244,14 +7133,6 @@ def _web_update_report(payload: dict) -> dict:
     text = str(payload.get("text") or "").strip()
     if not text:
         return {"ok": False, "message": "Report text cannot be empty."}
-    if len(text) > MAX_REPORT_LENGTH:
-        return {
-            "ok": False,
-            "message": (
-                f"Report is too long ({len(text)} chars). "
-                f"The limit is {MAX_REPORT_LENGTH}."
-            ),
-        }
     try:
         update_report_in_excel(index, str(payload.get("datetime") or "").strip(), text)
     except PermissionError:
@@ -8177,13 +8058,6 @@ def cli_console_loop(session: ReporterSession, dual: bool):
             continue
 
         report = command.replace("\\n", "\n").strip()
-        if len(report) > MAX_REPORT_LENGTH:
-            print(
-                f"  [!] Too long ({len(report)} chars). "
-                f"The limit is {MAX_REPORT_LENGTH}."
-            )
-            continue
-
         save_report_text(report, "terminal", session)
 
     session.cli_active = False
