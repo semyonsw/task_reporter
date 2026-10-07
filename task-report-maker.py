@@ -1929,7 +1929,79 @@ def file_checked_tasks(session=None, origin: str = "board") -> dict:
     # instant could both write the same day.  _BOARD_LOCK is an RLock and is
     # always taken before _EXCEL_LOCK, never the other way round.
     with _BOARD_LOCK:
-        return _file_checked_tasks_locked(session, origin)
+        result = _file_checked_tasks_locked(session, origin)
+    if result.get("filedCount"):
+        _push_filing_to_git()
+    return result
+
+
+# After a filing, the workbook and the board are committed and pushed so the
+# repo always carries the latest tasks.  Only these two files are committed,
+# whatever else happens to be staged or modified.
+GIT_SYNC_FILES = [EXCEL_FILE_NAME, TASKS_FILE_NAME]
+GIT_SYNC_MESSAGE = "live update of tasks"
+GIT_SYNC_BRANCH = "main"
+_GIT_SYNC_LOCK = threading.Lock()
+
+
+def _git(*args, timeout: float = 30):
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    return subprocess.run(
+        ["git", *args],
+        cwd=BASE_DIR,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+        env=env,
+        # The windowed app has no console; without this every git call flashes one.
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+
+
+def _git_sync_filing():
+    """Add, commit and push the workbook and the board.  Never raises."""
+    with _GIT_SYNC_LOCK:
+        try:
+            branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+            if branch.returncode != 0:
+                print(f"  [~] Git sync skipped: {BASE_DIR} is not a git repository.")
+                return
+            if branch.stdout.strip() != GIT_SYNC_BRANCH:
+                print(f"  [~] Git sync skipped: the repo is on "
+                      f"'{branch.stdout.strip()}', not '{GIT_SYNC_BRANCH}'.")
+                return
+
+            # Staged and committed under the locks, so a save landing at the
+            # same moment cannot be half-committed.  The push runs outside them.
+            with _BOARD_LOCK, _EXCEL_LOCK:
+                added = _git("add", "--", *GIT_SYNC_FILES)
+                if added.returncode != 0:
+                    print(f"  [!] Git add failed: {added.stderr.strip()}")
+                    return
+                if _git("diff", "--cached", "--quiet", "--", *GIT_SYNC_FILES).returncode == 0:
+                    print("  [~] Git sync: nothing changed to commit.")
+                    return
+                committed = _git("commit", "-m", GIT_SYNC_MESSAGE, "--", *GIT_SYNC_FILES)
+                if committed.returncode != 0:
+                    print(f"  [!] Git commit failed: "
+                          f"{(committed.stderr or committed.stdout).strip()}")
+                    return
+
+            pushed = _git("push", "origin", GIT_SYNC_BRANCH, timeout=120)
+            if pushed.returncode != 0:
+                # The commit stays local and goes up with the next push.
+                print(f"  [!] Git push failed: {pushed.stderr.strip()}")
+                return
+            print(f"  [ok] Pushed \"{GIT_SYNC_MESSAGE}\" to origin/{GIT_SYNC_BRANCH}.")
+        except Exception as exc:
+            print(f"  [!] Git sync failed: {exc}")
+
+
+def _push_filing_to_git():
+    # Not a daemon: a one-shot `--file-checked` run must wait for the push
+    # before the process exits.
+    threading.Thread(target=_git_sync_filing, name="git-sync", daemon=False).start()
 
 
 def _file_checked_tasks_locked(session, origin: str) -> dict:
