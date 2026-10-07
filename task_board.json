@@ -1,827 +1,1027 @@
 {
   "version": 1,
-  "seq": 74,
+  "seq": 78,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
       "seq": 1,
+      "order": null,
       "date": "2026-08-28",
       "project": "Buy For Me",
       "text": "Make a telegram bot for every updated or added row.",
       "done": true,
       "created_at": "28/08/2026 12:31:15",
       "done_at": "28/08/2026 14:59:38",
-      "filed_at": "28/08/2026 14:59:47"
+      "filed_at": "28/08/2026 14:59:47",
+      "files": []
     },
     {
       "id": "JfX1-DWMYOg",
       "seq": 2,
+      "order": null,
       "date": "2026-08-28",
       "project": "Logistics",
       "text": "Start making the xml file out of the xlsx and csv files",
       "done": true,
       "created_at": "28/08/2026 12:31:59",
       "done_at": "28/08/2026 14:59:40",
-      "filed_at": "28/08/2026 14:59:47"
+      "filed_at": "28/08/2026 14:59:47",
+      "files": []
     },
     {
       "id": "F0qoMOr17QA",
       "seq": 3,
+      "order": null,
       "date": "2026-08-28",
       "project": "Buy For Me",
       "text": "find the clickable buttons of tracking code links and send that with the data using telegram bot",
       "done": true,
       "created_at": "28/08/2026 12:44:35",
       "done_at": "28/08/2026 14:59:39",
-      "filed_at": "28/08/2026 14:59:47"
+      "filed_at": "28/08/2026 14:59:47",
+      "files": []
     },
     {
       "id": "0Hpj6bbYmsY",
       "seq": 4,
+      "order": null,
       "date": "2026-08-28",
       "project": "Buy For Me",
       "text": "Make a telegram bot for every updated or added row.",
       "done": true,
       "created_at": "28/08/2026 15:00:45",
       "done_at": "28/08/2026 15:02:22",
-      "filed_at": "28/08/2026 15:02:38"
+      "filed_at": "28/08/2026 15:02:38",
+      "files": []
     },
     {
       "id": "20DsdQlRh-Y",
       "seq": 5,
+      "order": null,
       "date": "2026-08-28",
       "project": "Logistics",
       "text": "Make the correct xml file out of xlsx and csv files",
       "done": true,
       "created_at": "28/08/2026 15:01:22",
       "done_at": "28/08/2026 15:02:26",
-      "filed_at": "28/08/2026 15:02:38"
+      "filed_at": "28/08/2026 15:02:38",
+      "files": []
     },
     {
       "id": "QOPZ7orzDDc",
       "seq": 6,
+      "order": null,
       "date": "2026-08-28",
       "project": "Buy For Me",
       "text": "add the clickable button for the tracking code reveal",
       "done": true,
       "created_at": "28/08/2026 15:02:07",
       "done_at": "28/08/2026 15:02:23",
-      "filed_at": "28/08/2026 15:02:38"
+      "filed_at": "28/08/2026 15:02:38",
+      "files": []
     },
     {
       "id": "sFrqLl0wx7A",
       "seq": 7,
+      "order": null,
       "date": "2026-08-28",
       "project": "Logistics",
       "text": "Make the correct xml file out of xlsx and csv files",
       "done": true,
       "created_at": "28/08/2026 15:03:26",
       "done_at": "28/08/2026 15:03:45",
-      "filed_at": "28/08/2026 15:03:56"
+      "filed_at": "28/08/2026 15:03:56",
+      "files": []
     },
     {
       "id": "KqelYdrE3Ao",
       "seq": 8,
+      "order": null,
       "date": "2026-08-28",
       "project": "Buy For Me",
       "text": "add the clickable button for the tracking code reveal",
       "done": true,
       "created_at": "28/08/2026 15:03:36",
       "done_at": "28/08/2026 15:03:45",
-      "filed_at": "28/08/2026 15:03:56"
+      "filed_at": "28/08/2026 15:03:56",
+      "files": []
     },
     {
       "id": "0QX785BszwE",
       "seq": 9,
+      "order": null,
       "date": "2026-08-28",
       "project": "Buy For Me",
       "text": "Make a telegram bot for every updated or added row.",
       "done": true,
       "created_at": "28/08/2026 15:03:43",
       "done_at": "28/08/2026 15:03:47",
-      "filed_at": "28/08/2026 15:03:56"
+      "filed_at": "28/08/2026 15:03:56",
+      "files": []
     },
     {
       "id": "rOdrsuLLLzo",
       "seq": 10,
+      "order": null,
       "date": "2026-08-28",
       "project": "Buy For Me",
       "text": "Make a telegram bot for every updated or added row.",
       "done": true,
       "created_at": "28/08/2026 15:40:49",
       "done_at": "28/08/2026 15:41:10",
-      "filed_at": "28/08/2026 15:41:14"
+      "filed_at": "28/08/2026 15:41:14",
+      "files": []
     },
     {
       "id": "EtBCvIA7vIY",
       "seq": 11,
+      "order": null,
       "date": "2026-08-28",
       "project": "Logistics",
       "text": "Make the correct xml file out of xlsx and csv files",
       "done": true,
       "created_at": "28/08/2026 15:40:57",
       "done_at": "28/08/2026 15:41:11",
-      "filed_at": "28/08/2026 15:41:14"
+      "filed_at": "28/08/2026 15:41:14",
+      "files": []
     },
     {
       "id": "pIGqbLBjPqw",
       "seq": 12,
+      "order": null,
       "date": "2026-08-28",
       "project": "Buy For Me",
       "text": "add the clickable button for the tracking code reveal",
       "done": true,
       "created_at": "28/08/2026 15:41:08",
       "done_at": "28/08/2026 15:41:11",
-      "filed_at": "28/08/2026 15:41:14"
+      "filed_at": "28/08/2026 15:41:14",
+      "files": []
     },
     {
       "id": "bGL-Ro45Bbk",
       "seq": 13,
+      "order": null,
       "date": "2026-08-31",
       "project": "Logistics",
       "text": "make one file with correct structure out of 141 xml files and send, get approval",
       "done": true,
       "created_at": "31/08/2026 09:52:02",
       "done_at": "31/08/2026 10:53:22",
-      "filed_at": "31/08/2026 10:53:30"
+      "filed_at": "31/08/2026 10:53:30",
+      "files": []
     },
     {
       "id": "0RW0BNwhFP4",
       "seq": 14,
+      "order": null,
       "date": "2026-08-31",
       "project": "Buy For Me",
       "text": "make the telegram bor to show the tracking code revealer button also.",
       "done": true,
       "created_at": "31/08/2026 10:53:20",
       "done_at": "31/08/2026 10:53:22",
-      "filed_at": "31/08/2026 10:53:30"
+      "filed_at": "31/08/2026 10:53:30",
+      "files": []
     },
     {
       "id": "jcDxze4hP9g",
       "seq": 15,
+      "order": null,
       "date": "2026-08-31",
       "project": "Logistics",
       "text": "merge the 141 xml files in a correct way and send to the logistics chief, and get approval about the correctness of the files",
       "done": true,
       "created_at": "31/08/2026 11:12:13",
       "done_at": "31/08/2026 14:41:52",
-      "filed_at": "01/09/2026 14:18:52"
+      "filed_at": "01/09/2026 14:18:52",
+      "files": []
     },
     {
       "id": "eD_DjvUP7Mg",
       "seq": 16,
+      "order": null,
       "date": "2026-08-31",
       "project": "Buy For Me",
       "text": "add a clickable link for revealing/seeing the tracking code from the mail (the tracking code viewer buttons link))",
       "done": true,
       "created_at": "31/08/2026 11:12:56",
       "done_at": "31/08/2026 11:20:02",
-      "filed_at": "01/09/2026 14:18:52"
+      "filed_at": "01/09/2026 14:18:52",
+      "files": []
     },
     {
       "id": "gXpuSf8t1O0",
       "seq": 17,
+      "order": null,
       "date": "2026-09-01",
       "project": "Buy For Me",
       "text": "«ԳՆԻ՛Ր ԻՄ ՓՈԽԱՐԵՆ»-ի նոր պատվերի հարցում-should be removed, and not considered",
       "done": true,
       "created_at": "01/09/2026 15:40:05",
       "done_at": "01/09/2026 19:41:54",
-      "filed_at": "01/09/2026 19:41:58"
+      "filed_at": "01/09/2026 19:41:58",
+      "files": []
     },
     {
       "id": "VPgpLfHlHX0",
       "seq": 18,
+      "order": null,
       "date": "2026-09-01",
       "project": "Buy For Me",
       "text": "in the buy4me telegram bot make the structure as Rob mentioned",
       "done": true,
       "created_at": "01/09/2026 15:41:07",
       "done_at": "01/09/2026 17:14:26",
-      "filed_at": "01/09/2026 19:41:58"
+      "filed_at": "01/09/2026 19:41:58",
+      "files": []
     },
     {
       "id": "VbJdxQy68PU",
       "seq": 19,
+      "order": null,
       "date": "2026-09-01",
       "project": "FPL Captain",
       "text": "fix the \"properties not found issue\"",
       "done": true,
       "created_at": "01/09/2026 16:18:34",
       "done_at": "01/09/2026 17:07:50",
-      "filed_at": "01/09/2026 19:41:58"
+      "filed_at": "01/09/2026 19:41:58",
+      "files": []
     },
     {
       "id": "opPN0n5JUic",
       "seq": 20,
+      "order": null,
       "date": "2026-09-01",
       "project": "ONEX-Academy",
       "text": "fix the grammatical issue in the onex-academy website",
       "done": true,
       "created_at": "01/09/2026 16:21:50",
       "done_at": "01/09/2026 16:21:51",
-      "filed_at": "01/09/2026 19:41:58"
+      "filed_at": "01/09/2026 19:41:58",
+      "files": []
     },
     {
       "id": "tv7qP7VbFVw",
       "seq": 21,
+      "order": null,
       "date": "2026-09-02",
       "project": "Buy For Me",
       "text": "add Rob's new email and make that be tracked and telegram bot alerted also",
       "done": true,
       "created_at": "02/09/2026 17:48:06",
       "done_at": "02/09/2026 17:48:08",
-      "filed_at": "02/09/2026 19:32:50"
+      "filed_at": "02/09/2026 19:32:50",
+      "files": []
     },
     {
       "id": "BA8Ett8rMzs",
       "seq": 22,
+      "order": null,
       "date": "2026-09-03",
       "project": "Buy For Me",
       "text": "delete the email row from the telegram bot message",
       "done": true,
       "created_at": "03/09/2026 15:38:13",
       "done_at": "03/09/2026 16:28:44",
-      "filed_at": "03/09/2026 18:17:25"
+      "filed_at": "03/09/2026 18:17:25",
+      "files": []
     },
     {
       "id": "8AHXKJfvTFA",
       "seq": 23,
+      "order": null,
       "date": "2026-09-03",
       "project": "Buy For Me",
       "text": "update the [buy for me]'s ai agent's prompt so the agent should send only the necessary and correct emails with its tracking codes/order ids",
       "done": true,
       "created_at": "03/09/2026 16:29:39",
       "done_at": "03/09/2026 19:50:16",
-      "filed_at": "03/09/2026 19:50:18"
+      "filed_at": "03/09/2026 19:50:18",
+      "files": []
     },
     {
       "id": "5YvOvsxixow",
       "seq": 24,
+      "order": null,
       "date": "2026-09-03",
       "project": "Buy For Me",
       "text": "update the \"BFM Request Link\" to the sorted and filtered ONEX Buy For Me Admin page",
       "done": true,
       "created_at": "03/09/2026 16:44:08",
       "done_at": "03/09/2026 16:59:29",
-      "filed_at": "03/09/2026 18:17:25"
+      "filed_at": "03/09/2026 18:17:25",
+      "files": []
     },
     {
       "id": "vlVxxORMAws",
       "seq": 25,
+      "order": null,
       "date": "2026-09-04",
       "project": "Buy For Me",
       "text": "continue working on automation button clicking system",
       "done": true,
       "created_at": "03/09/2026 19:50:38",
       "done_at": "04/09/2026 17:08:47",
-      "filed_at": "04/09/2026 18:06:19"
+      "filed_at": "04/09/2026 18:06:19",
+      "files": []
     },
     {
       "id": "ZYu99RtpLfs",
       "seq": 26,
+      "order": null,
       "date": "2026-09-04",
       "project": "ai-agents-scores",
       "text": "fix the view ticket text, make that the same clickable way, but the ticket id text instead, so replace them",
       "done": true,
       "created_at": "04/09/2026 16:04:43",
       "done_at": "04/09/2026 17:10:26",
-      "filed_at": "04/09/2026 18:06:19"
+      "filed_at": "04/09/2026 18:06:19",
+      "files": []
     },
     {
       "id": "YfuCNUeQuKE",
       "seq": 27,
+      "order": null,
       "date": "2026-09-04",
       "project": "ai-agents-scores",
       "text": "add a 'copy' button to the each text of the ai agent's criteria clarification, also add a 'copy all', clicking which the user should check the necessary boxes of the corresponding criteria and click copy and copy all the selected ones with nice and understandable structure",
       "done": true,
       "created_at": "04/09/2026 17:10:23",
       "done_at": "04/09/2026 17:10:26",
-      "filed_at": "04/09/2026 18:06:19"
+      "filed_at": "04/09/2026 18:06:19",
+      "files": []
     },
     {
       "id": "242NGPbYER8",
       "seq": 28,
+      "order": null,
       "date": "2026-09-07",
       "project": "Buy For Me",
       "text": "changed the links of the telegram bot \"BFM request link\" to the real searched request links with oder id already searching",
       "done": true,
       "created_at": "07/09/2026 15:17:09",
       "done_at": "07/09/2026 15:47:14",
-      "filed_at": "07/09/2026 15:47:39"
+      "filed_at": "07/09/2026 15:47:39",
+      "files": []
     },
     {
       "id": "bFiNzal-bGc",
       "seq": 29,
+      "order": null,
       "date": "2026-09-07",
       "project": "Buy For Me",
       "text": "add \"Tracking code found!\" alert in the telegram bot message",
       "done": true,
       "created_at": "07/09/2026 15:17:24",
       "done_at": "07/09/2026 17:49:08",
-      "filed_at": "07/09/2026 17:49:15"
+      "filed_at": "07/09/2026 17:49:15",
+      "files": []
     },
     {
       "id": "zA5EE0NCXc0",
       "seq": 30,
+      "order": null,
       "date": "2026-09-07",
       "project": "Buy For Me",
       "text": "return back the sender name in the telegram bot",
       "done": true,
       "created_at": "07/09/2026 17:48:01",
       "done_at": "07/09/2026 19:11:32",
-      "filed_at": "07/09/2026 19:11:36"
+      "filed_at": "07/09/2026 19:11:36",
+      "files": []
     },
     {
       "id": "Z5hE15zby1s",
       "seq": 31,
+      "order": null,
       "date": "2026-09-08",
       "project": "Buy For Me",
       "text": "if in the mail there are LILYA TADEVOSYAN name, then warn in the telegram bot message",
       "done": true,
       "created_at": "07/09/2026 17:48:54",
       "done_at": "08/09/2026 20:09:03",
-      "filed_at": "08/09/2026 20:09:08"
+      "filed_at": "08/09/2026 20:09:08",
+      "files": []
     },
     {
       "id": "Ag-l2eTyNN8",
       "seq": 32,
+      "order": null,
       "date": "2026-09-07",
       "project": "Buy For Me",
       "text": "only tracking id's messages bot will send",
       "done": true,
       "created_at": "07/09/2026 17:54:49",
       "done_at": "08/09/2026 16:13:49",
-      "filed_at": "08/09/2026 16:13:51"
+      "filed_at": "08/09/2026 16:13:51",
+      "files": []
     },
     {
       "id": "imI5AmzoV9s",
       "seq": 33,
+      "order": null,
       "date": "2026-09-08",
       "project": "Logistics",
       "text": "Start Tsovinar telegram bot or automation system for \"hertakan hamar\"",
       "done": true,
       "created_at": "07/09/2026 18:25:46",
       "done_at": "08/09/2026 17:29:12",
-      "filed_at": "08/09/2026 17:29:16"
+      "filed_at": "08/09/2026 17:29:16",
+      "files": []
     },
     {
       "id": "BVG1uzUHotg",
       "seq": 34,
+      "order": null,
       "date": "2026-09-08",
       "project": "Logistics",
       "text": "finish the logistics automation workflow of trade gov am website",
       "done": true,
       "created_at": "08/09/2026 20:09:30",
       "done_at": "08/09/2026 20:09:48",
-      "filed_at": "08/09/2026 20:09:50"
+      "filed_at": "08/09/2026 20:09:50",
+      "files": []
     },
     {
       "id": "Z_DCnx6LpS8",
       "seq": 35,
+      "order": null,
       "date": "2026-09-08",
       "project": "Logistics",
       "text": "install the logistics automation in the agents pc",
       "done": true,
       "created_at": "08/09/2026 20:09:45",
       "done_at": "08/09/2026 20:14:34",
-      "filed_at": "08/09/2026 20:14:36"
+      "filed_at": "08/09/2026 20:14:36",
+      "files": []
     },
     {
       "id": "7fvdrlUEf5w",
       "seq": 36,
+      "order": null,
       "date": "2026-09-09",
       "project": "Logistics",
       "text": "got new bugs, working on it. also changing the architecture of the output (xlsx to xls) and exel cells structure (column names, number, etc...)",
       "done": true,
       "created_at": "09/09/2026 19:25:58",
       "done_at": "09/09/2026 20:00:33",
-      "filed_at": "09/09/2026 20:00:35"
+      "filed_at": "09/09/2026 20:00:35",
+      "files": []
     },
     {
       "id": "ZLc28NJVfRM",
       "seq": 37,
+      "order": null,
       "date": "2026-09-09",
       "project": "Buy For Me",
       "text": "smoke tested all, everything works perfect, telegram bot sends message only when the tracking code is detected (and the specific name detected)",
       "done": true,
       "created_at": "09/09/2026 19:26:41",
       "done_at": "09/09/2026 19:26:42",
-      "filed_at": "09/09/2026 19:26:45"
+      "filed_at": "09/09/2026 19:26:45",
+      "files": []
     },
     {
       "id": "uZDeP4cf1dk",
       "seq": 38,
+      "order": null,
       "date": "2026-09-10",
       "project": "Logistics",
       "text": "test the bug-fixed version of the trade.gov.am automation",
       "done": true,
       "created_at": "09/09/2026 20:01:05",
       "done_at": "10/09/2026 18:50:59",
-      "filed_at": "10/09/2026 18:51:07"
+      "filed_at": "10/09/2026 18:51:07",
+      "files": []
     },
     {
       "id": "Sctui7Lk0v0",
       "seq": 39,
+      "order": null,
       "date": "2026-09-10",
       "project": "Buy For Me",
       "text": "create a ui which will find some product's different prices in the same companies site.",
       "done": true,
       "created_at": "10/09/2026 14:35:41",
       "done_at": "10/09/2026 18:51:03",
-      "filed_at": "10/09/2026 18:51:07"
+      "filed_at": "10/09/2026 18:51:07",
+      "files": []
     },
     {
       "id": "QcFAEYRFG68",
       "seq": 40,
+      "order": null,
       "date": "2026-09-11",
       "project": "local computer improvements",
       "text": "make sure the vs code wsl system is by default for any actions",
       "done": false,
       "created_at": "10/09/2026 14:53:04",
       "done_at": null,
-      "filed_at": null
+      "filed_at": null,
+      "files": []
     },
     {
       "id": "_RJbKeYfK90",
       "seq": 41,
+      "order": null,
       "date": "2026-09-10",
       "project": "Logistics",
       "text": "fix the bugs and issues, and finish them",
       "done": true,
       "created_at": "10/09/2026 18:50:58",
       "done_at": "10/09/2026 18:51:00",
-      "filed_at": "10/09/2026 18:51:07"
+      "filed_at": "10/09/2026 18:51:07",
+      "files": []
     },
     {
       "id": "Mb6FNKXTXzA",
       "seq": 42,
+      "order": null,
       "date": "2026-09-11",
       "project": "Smart-Wall",
       "text": "implement the mock state of the smart wall computer and make the right task scheduler",
       "done": false,
       "created_at": "10/09/2026 18:52:11",
       "done_at": null,
-      "filed_at": null
+      "filed_at": null,
+      "files": []
     },
     {
       "id": "sg5jdIsD3Aw",
       "seq": 43,
+      "order": null,
       "date": "2026-09-11",
       "project": "Logistics",
       "text": "1196 number check to make all the pages data points appear in the exel",
       "done": true,
       "created_at": "10/09/2026 19:25:36",
       "done_at": "10/09/2026 19:45:53",
-      "filed_at": "10/09/2026 19:45:56"
+      "filed_at": "10/09/2026 19:45:56",
+      "files": []
     },
     {
       "id": "VCFqHMdjMWg",
       "seq": 44,
+      "order": null,
       "date": "2026-09-11",
       "project": "Logistics",
       "text": "install the new version of trade.gov.am to the agent's computer",
       "done": true,
       "created_at": "10/09/2026 19:46:13",
       "done_at": "11/09/2026 15:02:48",
-      "filed_at": "11/09/2026 15:02:50"
+      "filed_at": "11/09/2026 15:02:50",
+      "files": []
     },
     {
       "id": "a7eXZpGnBNs",
       "seq": 45,
+      "order": null,
       "date": "2026-09-11",
       "project": "Buy For Me",
       "text": "create an API for the BFM articule searching for integration",
       "done": true,
       "created_at": "11/09/2026 16:30:32",
       "done_at": "11/09/2026 16:30:35",
-      "filed_at": "11/09/2026 16:30:38"
+      "filed_at": "11/09/2026 16:30:38",
+      "files": []
     },
     {
       "id": "bCqrvzvWd8E",
       "seq": 46,
+      "order": null,
       "date": "2026-09-11",
       "project": "ONEX-Academy",
       "text": "use claude design to design very nice and bomb onex-like design for onex-academy",
       "done": true,
       "created_at": "11/09/2026 17:03:32",
       "done_at": "11/09/2026 20:03:39",
-      "filed_at": "11/09/2026 20:03:42"
+      "filed_at": "11/09/2026 20:03:42",
+      "files": []
     },
     {
       "id": "yr7NlosvEQE",
       "seq": 47,
+      "order": null,
       "date": "2026-09-14",
       "project": "Buy For Me",
       "text": "Changed supported countries to only am, de, gr, it, pl, es, ae, uk, and us; removed obsolete country markets; improved product-link parsing for Zara, H&M, Puma, U.S. Polo, and Carpisa; added support for uspashop.com; expanded link validation tests; updated documentation and examples; committed and pushed all changes to main.",
       "done": true,
       "created_at": "14/09/2026 19:05:13",
       "done_at": "14/09/2026 19:05:15",
-      "filed_at": "14/09/2026 19:05:17"
+      "filed_at": "14/09/2026 19:05:17",
+      "files": []
     },
     {
       "id": "Wm1qOZAii60",
       "seq": 48,
+      "order": null,
       "date": "2026-09-17",
       "project": "DealFinder",
       "text": "made these updates:\n\ncountry , shop price, onex price, total price , the link of the product- these gonna be colums\n\nshow exchange with prices when mouse hovering\n\n\"dram\" icon be at the right part of the price and smaller\n\nshow active shops logos (clicking them should go to the official site)\n\nlinks be concrete\n\nadd weight column to product\n\none product priview\n\ncontrie choosing, excange rate sections delete",
       "done": true,
       "created_at": "17/09/2026 15:21:00",
       "done_at": "17/09/2026 15:21:57",
-      "filed_at": "17/09/2026 15:21:59"
+      "filed_at": "17/09/2026 15:21:59",
+      "files": []
     },
     {
       "id": "pHLsMDLxB_I",
       "seq": 49,
+      "order": null,
       "date": "2026-09-17",
       "project": "DealFinder",
       "text": "add DealFinder project to Lovable",
       "done": true,
       "created_at": "17/09/2026 15:22:17",
       "done_at": "17/09/2026 15:22:18",
-      "filed_at": "17/09/2026 15:22:21"
+      "filed_at": "17/09/2026 15:22:21",
+      "files": []
     },
     {
       "id": "tMo8OLtj-GE",
       "seq": 50,
+      "order": null,
       "date": "2026-09-18",
       "project": "ONEX-Academy",
       "text": "make the cards with nice pictures, remove the onex@onex.am thing from the cards, make only ONEX maybe",
       "done": true,
       "created_at": "18/09/2026 17:16:41",
       "done_at": "23/09/2026 19:56:04",
-      "filed_at": "23/09/2026 19:56:06"
+      "filed_at": "23/09/2026 19:56:06",
+      "files": []
     },
     {
       "id": "_aMOkY8FYnY",
       "seq": 51,
+      "order": null,
       "date": "2026-09-18",
       "project": "DealFinder",
       "text": "continue working on the google extention",
-      "done": false,
+      "done": true,
       "created_at": "18/09/2026 17:17:10",
-      "done_at": null,
-      "filed_at": null
+      "done_at": "07/10/2026 17:36:40",
+      "filed_at": "07/10/2026 17:36:43",
+      "files": []
     },
     {
       "id": "wLNn6Y3CRuc",
       "seq": 52,
+      "order": null,
       "date": "2026-09-23",
       "project": "ONEX-Academy",
       "text": "fix the plane animation bugs (delays that are shown in the next page)",
       "done": true,
       "created_at": "23/09/2026 17:16:05",
       "done_at": "23/09/2026 19:20:19",
-      "filed_at": "23/09/2026 19:20:23"
+      "filed_at": "23/09/2026 19:20:23",
+      "files": []
     },
     {
       "id": "dzEtAxM0D5o",
       "seq": 53,
+      "order": null,
       "date": "2026-09-23",
       "project": "ONEX-Academy",
       "text": "reduce the showing seconds in the Տերմիններ quiz",
       "done": true,
       "created_at": "23/09/2026 17:16:23",
       "done_at": "23/09/2026 19:56:18",
-      "filed_at": "23/09/2026 19:56:19"
+      "filed_at": "23/09/2026 19:56:19",
+      "files": []
     },
     {
       "id": "D8_AodlfCpM",
       "seq": 54,
+      "order": null,
       "date": "2026-09-24",
       "project": "ONEX-Academy",
       "text": "add new \"customized quiz\" specifically designed for one concrete agent.",
       "done": true,
       "created_at": "24/09/2026 13:47:45",
       "done_at": "24/09/2026 15:33:32",
-      "filed_at": "24/09/2026 15:33:34"
+      "filed_at": "24/09/2026 15:33:34",
+      "files": []
     },
     {
       "id": "6bv89OyFk7I",
       "seq": 55,
+      "order": null,
       "date": "2026-09-24",
       "project": "ONEX-Academy",
       "text": "flashcards game update",
       "done": true,
       "created_at": "24/09/2026 17:59:04",
       "done_at": "24/09/2026 17:59:10",
-      "filed_at": "24/09/2026 17:59:13"
+      "filed_at": "24/09/2026 17:59:13",
+      "files": []
     },
     {
       "id": "AADrc7D2-wk",
       "seq": 56,
+      "order": null,
       "date": "2026-09-24",
       "project": "ONEX-Academy",
       "text": "overall bug fix",
       "done": true,
       "created_at": "24/09/2026 17:59:08",
       "done_at": "24/09/2026 17:59:10",
-      "filed_at": "24/09/2026 17:59:13"
+      "filed_at": "24/09/2026 17:59:13",
+      "files": []
     },
     {
       "id": "Oo97ZGGjZHg",
       "seq": 57,
+      "order": null,
       "date": "2026-09-29",
       "project": "Blot",
       "text": "start creating blot game with right rules",
       "done": true,
       "created_at": "25/09/2026 15:55:45",
       "done_at": "29/09/2026 14:43:21",
-      "filed_at": "29/09/2026 14:43:36"
+      "filed_at": "29/09/2026 14:43:36",
+      "files": []
     },
     {
       "id": "EoHKc_j1wP8",
       "seq": 58,
+      "order": null,
       "date": "2026-09-29",
       "project": "Blot",
       "text": "make improvements, improve and correct scoring system, ui and other things that the player faces",
       "done": true,
       "created_at": "29/09/2026 16:50:49",
       "done_at": "29/09/2026 16:50:51",
-      "filed_at": "29/09/2026 16:50:54"
+      "filed_at": "29/09/2026 16:50:54",
+      "files": []
     },
     {
       "id": "4UN8mb8Eb6k",
       "seq": 59,
+      "order": null,
       "date": "2026-09-30",
       "project": "Blot",
       "text": "update the gameplay and the score calculating system",
       "done": true,
       "created_at": "30/09/2026 17:01:12",
       "done_at": "30/09/2026 17:02:45",
-      "filed_at": "30/09/2026 17:02:50"
+      "filed_at": "30/09/2026 17:02:50",
+      "files": []
     },
     {
       "id": "zOpUfanpZ34",
       "seq": 60,
+      "order": null,
       "date": "2026-09-30",
       "project": "cc-kpi-onex",
       "text": "improved the visualisations and the overall ui and exel file correct parsing and handling",
       "done": true,
       "created_at": "30/09/2026 17:02:37",
       "done_at": "30/09/2026 17:02:47",
-      "filed_at": "30/09/2026 17:02:50"
+      "filed_at": "30/09/2026 17:02:50",
+      "files": []
     },
     {
       "id": "YyrtCP0lOyU",
       "seq": 61,
+      "order": null,
       "date": "2026-10-01",
       "project": "cc-kpi-onex",
       "text": "continue working on project",
       "done": true,
       "created_at": "01/10/2026 19:02:39",
       "done_at": "01/10/2026 19:03:12",
-      "filed_at": "01/10/2026 19:03:15"
+      "filed_at": "01/10/2026 19:03:15",
+      "files": []
     },
     {
       "id": "-h2dWsSW5JU",
       "seq": 62,
+      "order": null,
       "date": "2026-10-01",
       "project": "cc-kpi-onex",
       "text": "make meeting with necessary people and get tasks, start working on them",
       "done": true,
       "created_at": "01/10/2026 19:02:55",
       "done_at": "06/10/2026 17:32:57",
-      "filed_at": "06/10/2026 17:33:00"
+      "filed_at": "06/10/2026 17:33:00",
+      "files": []
     },
     {
       "id": "tf2H35LTkBM",
       "seq": 63,
+      "order": null,
       "date": "2026-10-01",
       "project": "Blot",
       "text": "make a website with domain",
       "done": true,
       "created_at": "01/10/2026 19:03:10",
       "done_at": "01/10/2026 19:03:11",
-      "filed_at": "01/10/2026 19:03:15"
+      "filed_at": "01/10/2026 19:03:15",
+      "files": []
     },
     {
       "id": "TYwzqluQ4xA",
       "seq": 64,
+      "order": null,
       "date": "2026-10-02",
       "project": "ai-agents-scores",
       "text": "got the tasks from the quality control specialist and done them, here are what i have done:\n```\nAdded retry logic to handle timeout batches properly.\nExported and sanitized 5 n8n workflows and prompts, setting up automated secret redacting for backups.\nUpdated the live knowledge base with the latest tariffs, delivery/weight calculation rules, payment methods, and recalculations via the onex.am calculator.\nPrepared 3 new evaluation criteria (Էմոջիներ, Կարեկցող խոսք, and Այլ բաժինների հետ հետևողականություն): drafted the prompts, added 6 new columns to the Supabase schema, prepared the Google\n```",
       "done": true,
       "created_at": "02/10/2026 19:31:33",
       "done_at": "02/10/2026 19:33:48",
-      "filed_at": "02/10/2026 19:33:50"
+      "filed_at": "02/10/2026 19:33:50",
+      "files": []
     },
     {
       "id": "YR2ISxovzNs",
       "seq": 65,
+      "order": null,
       "date": "2026-10-02",
       "project": "Blot",
       "text": "i have updated the ui of the game, made it crazy bomb nice ui with claude code, nice visualisations, etc...",
       "done": true,
       "created_at": "02/10/2026 19:36:26",
       "done_at": "02/10/2026 19:37:06",
-      "filed_at": "02/10/2026 19:37:10"
+      "filed_at": "02/10/2026 19:37:10",
+      "files": []
     },
     {
       "id": "DBqEMe4jhnE",
       "seq": 66,
+      "order": null,
       "date": "2026-10-02",
       "project": "Blot",
       "text": "i have updated and improved the blot player bot's logic and ai capabilities, now they make better decisions and play better.",
       "done": true,
       "created_at": "02/10/2026 19:37:05",
       "done_at": "02/10/2026 19:37:07",
-      "filed_at": "02/10/2026 19:37:10"
+      "filed_at": "02/10/2026 19:37:10",
+      "files": []
     },
     {
       "id": "ZDG8xEm45tI",
       "seq": 67,
+      "order": null,
       "date": "2026-10-02",
       "project": "ai-agents-scores",
       "text": "made mcp with n8n-claude-supabase, so i can now just with one prompt make the necessary changes, which helps me to be more productive",
       "done": true,
       "created_at": "02/10/2026 19:58:50",
       "done_at": "02/10/2026 19:58:53",
-      "filed_at": "02/10/2026 19:58:55"
+      "filed_at": "02/10/2026 19:58:55",
+      "files": []
     },
     {
       "id": "nLmx36CwzWc",
       "seq": 68,
+      "order": null,
       "date": "2026-10-05",
       "project": "ai-agents-scores",
       "text": "change me",
       "done": true,
       "created_at": "05/10/2026 18:35:04",
       "done_at": "05/10/2026 18:35:48",
-      "filed_at": "05/10/2026 18:35:51"
+      "filed_at": "05/10/2026 18:35:51",
+      "files": []
     },
     {
       "id": "-vKZ8jRHTwk",
       "seq": 69,
+      "order": null,
       "date": "2026-10-06",
       "project": "cc-kpi-onex",
       "text": "implement the Kristina's tasks.",
       "done": true,
       "created_at": "06/10/2026 14:59:32",
       "done_at": "06/10/2026 17:33:04",
-      "filed_at": "06/10/2026 17:33:06"
+      "filed_at": "06/10/2026 17:33:06",
+      "files": []
     },
     {
       "id": "Bp1Q9uHnBEU",
       "seq": 70,
+      "order": null,
       "date": "2026-10-06",
       "project": "ai-agents-scores",
       "text": "validate the results and tell Anna",
       "done": true,
       "created_at": "06/10/2026 14:59:40",
       "done_at": "06/10/2026 17:34:53",
-      "filed_at": "06/10/2026 17:34:55"
+      "filed_at": "06/10/2026 17:34:55",
+      "files": []
     },
     {
       "id": "oj6lcTwij3I",
       "seq": 71,
+      "order": null,
       "date": "2026-10-06",
       "project": "Blot",
       "text": "check the server's stored feedback",
       "done": true,
       "created_at": "06/10/2026 14:59:52",
       "done_at": "06/10/2026 16:36:25",
-      "filed_at": "06/10/2026 16:36:29"
+      "filed_at": "06/10/2026 16:36:29",
+      "files": []
     },
     {
       "id": "8sHdT-N5MWc",
       "seq": 72,
+      "order": null,
       "date": "2026-10-06",
       "project": "DealFinder",
       "text": "Make the necessary updates on google extension",
       "done": true,
       "created_at": "06/10/2026 15:00:17",
       "done_at": "06/10/2026 16:36:26",
-      "filed_at": "06/10/2026 16:36:29"
+      "filed_at": "06/10/2026 16:36:29",
+      "files": []
     },
     {
       "id": "yV4kZqT-c9E",
       "seq": 73,
+      "order": null,
       "date": "2026-10-06",
       "project": "cc-kpi-onex",
       "text": "remove աշխատակից/ կարգ writtings from the ui, its too industrial, and not visual friendly.\n\nimprove the ui visuals of the upper part of the provided screenshot to be in the ui (do it right, and other motivation writtings)\n\nadd the levels (bronze silver gold ,etc..) nice visual friendly section with percent showing (shown in the new screenshot)\n\nselect in calendar the range of internship, so after that, the internship should be unchecked and the agent should become normal worker instead of intern. Also there should be editing function which admin can edit and make an internship worker standard.",
-      "done": false,
+      "done": true,
       "created_at": "06/10/2026 18:01:45",
-      "done_at": null,
-      "filed_at": null
+      "done_at": "07/10/2026 20:28:33",
+      "filed_at": "07/10/2026 20:28:36",
+      "files": []
     },
     {
       "id": "9ikm6NvPlV0",
       "seq": 74,
+      "order": null,
       "date": "2026-10-06",
       "project": "Blot",
       "text": "remove the line between baza-blot writting in every text, ui, logo, names, etc.. the users should only see it without the line",
       "done": false,
       "created_at": "06/10/2026 19:07:02",
       "done_at": null,
-      "filed_at": null
+      "filed_at": null,
+      "files": []
+    },
+    {
+      "id": "3B-ZJ-Y_xA0",
+      "seq": 75,
+      "order": null,
+      "date": "2026-10-07",
+      "project": "Blot",
+      "text": "add ai partner feature (ai agents that act like partners with user provided rules)",
+      "done": true,
+      "created_at": "07/10/2026 17:33:48",
+      "done_at": "07/10/2026 19:45:32",
+      "filed_at": "07/10/2026 19:45:36",
+      "files": []
+    },
+    {
+      "id": "h56qjvUAyP8",
+      "seq": 76,
+      "order": null,
+      "date": "2026-10-07",
+      "project": "ai-agents-scores",
+      "text": "Read Anna's feedback and make out of them xelqy glxit tasks, and start doing them",
+      "done": false,
+      "created_at": "07/10/2026 18:06:18",
+      "done_at": null,
+      "filed_at": null,
+      "files": []
+    },
+    {
+      "id": "9Y1cK9TRBkg",
+      "seq": 77,
+      "order": null,
+      "date": "2026-10-07",
+      "project": "Blot",
+      "text": "separate the xosal and xaxal types of rules of the ai partner , they should be separated from each other with maybe different tabs\n\nwhen user clicks to the ai partner, make that more visual and engagig, so user should know that the default is just a bot named Ani, and that the new created ai partner isnt selected automatically.\n\nwhen user selects the ai partner it isnt selecting in the game and in the game the 'Ani' plays, fix that so the ai should play using the corresponding users rules.\n\nthen user types rules make for the user nice items from the rules, so the rules should be separated.",
+      "done": false,
+      "created_at": "07/10/2026 20:05:27",
+      "done_at": null,
+      "filed_at": null,
+      "files": []
+    },
+    {
+      "id": "3we3hhy-1zI",
+      "seq": 78,
+      "order": null,
+      "date": "2026-10-07",
+      "project": "ai-agents-scores",
+      "text": "make the score and level editing function button to be more visual showing for the users so user can understand that it's editable.",
+      "done": false,
+      "created_at": "07/10/2026 20:15:42",
+      "done_at": null,
+      "filed_at": null,
+      "files": []
     }
   ],
   "projects": [
-    "cc-kpi-onex",
-    "Blot",
-    "DealFinder",
     "ai-agents-scores",
+    "Blot",
+    "cc-kpi-onex",
+    "DealFinder",
     "ONEX-Academy",
     "Buy For Me",
     "local computer improvements",
