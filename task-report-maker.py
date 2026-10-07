@@ -3396,16 +3396,9 @@ kbd {
 .main { flex: 1; min-height: 0; display: flex; }
 .view { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 24px; }
 
-/* Report */
-#editor { flex: 1; min-height: 160px; padding: 14px 16px; font-size: 15px; line-height: 1.6; }
-.footer {
-  display: flex; align-items: center; gap: 12px; padding-top: 14px;
-  border-top: 2px solid var(--color-divider); flex-wrap: wrap; flex: none;
-}
+/* Status line */
 .status { flex: 1; min-width: 120px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .status.success, .status.danger, .status.warn { color: var(--color-accent-700); }
-.counter { min-width: 80px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
-.wide-btn { min-width: 156px; height: 40px; }
 
 /* Board */
 .board-head { display: flex; align-items: baseline; gap: 12px; flex: none; }
@@ -3604,34 +3597,20 @@ kbd {
 .keys td:first-child { width: 1%; white-space: nowrap; padding-right: 12px; }
 
 /* Previous reports: a side panel */
-.panel-scrim {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 10;
-  background: color-mix(in srgb, var(--color-neutral-900) 25%, transparent);
-  opacity: 0; pointer-events: none; transition: opacity .18s ease;
-}
-.panel {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: 11; width: 560px; max-width: 100%;
-  display: flex; flex-direction: column; background: var(--color-bg);
-  border-left: 2px solid var(--color-text); box-shadow: var(--shadow-lg);
-  transform: translateX(105%); transition: transform .2s ease; visibility: hidden;
-}
-.is-app .panel { top: 40px; }
-.panel-open .panel-scrim { opacity: 1; pointer-events: auto; }
-.panel-open .panel { transform: none; visibility: visible; }
-.panel-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px 12px; }
-.panel-head .btn-icon { margin-left: auto; }
-.panel-tools { display: flex; gap: 8px; padding: 0 20px 14px; border-bottom: 2px solid var(--color-divider); }
+.panel-tools { display: flex; gap: 8px; padding-bottom: 14px; border-bottom: 2px solid var(--color-divider); flex: none; }
 .search { position: relative; flex: 1; }
 .search svg { position: absolute; left: 10px; top: 10px; opacity: 0.6; pointer-events: none; }
 .search .input { padding-left: 34px; }
 #historyProject { width: 170px; flex: none; }
 .panel-list { flex: 1; min-height: 0; overflow: auto; }
-.queued-strip { padding: 8px 20px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; background: var(--color-accent-100); color: var(--color-accent-800); }
+.queued-strip { padding: 8px 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; background: var(--color-accent-100); color: var(--color-accent-800); }
 .h-row {
-  display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px;
-  padding: 14px 20px; border-bottom: 1px solid var(--color-divider);
+  display: grid; grid-template-columns: 16px 32px minmax(0, 1fr) auto; gap: 10px;
+  padding: 14px 8px; border-bottom: 1px solid var(--color-divider);
 }
 .h-row:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+.h-row.is-selected { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.h-row .check { margin-top: 1px; }
 .h-num { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); padding-top: 1px; }
 .h-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .h-when { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -3727,14 +3706,14 @@ kbd {
 
   <header class="header">
     <div class="tabs" role="tablist">
-      <button class="tab is-on" id="tabReport" role="tab" title="Write a report (Ctrl+B)">Report</button>
-      <button class="tab" id="tabBoard" role="tab" title="Track tasks (Ctrl+B)">Board<span class="tab-badge" id="tabBadge"></span></button>
+      <button class="tab is-on" id="tabBoard" role="tab" title="Track tasks (Ctrl+B)">Board<span class="tab-badge" id="tabBadge"></span></button>
+      <button class="tab" id="tabReports" role="tab" title="Task reports in the workbook (Ctrl+B)">Reports</button>
     </div>
     <div class="header-gap"></div>
     <span class="clock" id="clock"></span>
     <div class="tools">
       <button class="btn btn-icon" id="revealBtn" aria-label="Show task_reports.xlsx in Explorer"><i data-icon="folder"></i></button>
-      <button class="btn btn-icon" id="historyBtn" title="Previous reports (Ctrl+H)" aria-label="Previous reports"><i data-icon="history"></i></button>
+      <button class="btn btn-icon" id="historyBtn" title="Task reports (Ctrl+H)" aria-label="Task reports"><i data-icon="history"></i></button>
       <button class="btn btn-icon" id="themeBtn" title="Switch light / dark" aria-label="Switch light / dark"><span class="theme-moon"><i data-icon="moon"></i></span><span class="theme-sun"><i data-icon="sun"></i></span></button>
       <button class="btn btn-icon" id="helpBtn" title="Keyboard shortcuts" aria-label="Keyboard shortcuts"><i data-icon="help"></i></button>
       <button class="btn btn-icon" id="settingsBtn" title="Settings" aria-label="Settings"><i data-icon="settings"></i></button>
@@ -3748,17 +3727,6 @@ kbd {
   </div>
 
   <div class="main">
-    <main class="view" id="reportView">
-      <h3>What did you accomplish?</h3>
-      <textarea id="editor" class="input" placeholder="Describe your work clearly and concisely&#8230;" autofocus></textarea>
-      <span class="hint"><b>Enter</b> new line · <b>Ctrl + Enter</b> save · drafts are kept if the window closes</span>
-      <div class="footer">
-        <span class="status" id="status">Ready</span>
-        <span class="counter" id="counter"></span>
-        <button class="btn btn-primary wide-btn" id="saveBtn">Save Report</button>
-      </div>
-    </main>
-
     <section class="view hidden" id="boardView">
       <div class="board-head">
         <h3>Task Board</h3>
@@ -3791,6 +3759,29 @@ kbd {
         </label>
         <button class="btn btn-secondary btn-tall" id="clearFiledBtn" title="Remove filed tasks from the board">Clear Filed</button>
         <button class="btn btn-primary file-btn" id="fileBtn">File Checked Tasks</button>
+      </div>
+    </section>
+
+    <section class="view hidden" id="reportsView">
+      <div class="board-head">
+        <h3>Task Reports</h3>
+        <span class="board-sub" id="historyCount"></span>
+      </div>
+      <div class="panel-tools">
+        <div class="search">
+          <i data-icon="search" data-size="16" data-stroke="2"></i>
+          <input class="input" id="historySearch" placeholder="Search text or date (07/09)…" spellcheck="false">
+        </div>
+        <select class="input" id="historyProject" aria-label="Project"></select>
+      </div>
+      <div class="panel-list" id="historyBody"></div>
+      <div class="board-footer">
+        <span class="status" id="status">Ready</span>
+        <label class="toggle" title="Tick every report the search and project filter show">
+          <input type="checkbox" class="check" id="selectAllReports">Select all shown
+        </label>
+        <button class="btn btn-secondary btn-tall" id="clearSelectionBtn">Clear Selection</button>
+        <button class="btn btn-primary file-btn" id="copySelectedBtn"><i data-icon="copy" data-size="16" data-stroke="2"></i><span id="copySelectedLabel">Copy Selected</span></button>
       </div>
     </section>
 
@@ -3864,24 +3855,6 @@ kbd {
   </div>
 </div>
 
-<!-- Previous reports: slides in from the right -->
-<div class="panel-scrim" id="historyScrim"></div>
-<aside class="panel" id="historyPanel" aria-label="Previous reports">
-  <div class="panel-head">
-    <h4>Previous Reports</h4>
-    <span class="modal-count" id="historyCount"></span>
-    <button class="btn btn-icon" id="historyClose" aria-label="Close"><i data-icon="x" data-stroke="2"></i></button>
-  </div>
-  <div class="panel-tools">
-    <div class="search">
-      <i data-icon="search" data-size="16" data-stroke="2"></i>
-      <input class="input" id="historySearch" placeholder="Search text or date (07/09)…" spellcheck="false">
-    </div>
-    <select class="input" id="historyProject" aria-label="Project"></select>
-  </div>
-  <div class="panel-list" id="historyBody"></div>
-</aside>
-
 <div class="backdrop" id="previewBackdrop">
   <div class="modal modal-lg">
     <div class="modal-head">
@@ -3938,6 +3911,7 @@ kbd {
     <div class="edit-error" id="tError"></div>
     <div class="modal-actions">
       <span class="keyhint"><b>Ctrl + Enter</b> save · <b>Esc</b> close</span>
+      <button class="btn btn-secondary" id="tCopy" title="Copy the task text as it is in the box"><i data-icon="copy" data-size="15" data-stroke="2"></i>Copy Text</button>
       <button class="btn btn-secondary" data-close>Cancel</button>
       <button class="btn btn-primary" id="tSave" style="min-width: 140px;">Save Changes</button>
     </div>
@@ -3956,6 +3930,7 @@ kbd {
     <div class="edit-error" id="editError"></div>
     <div class="modal-actions">
       <span class="keyhint"><b>Ctrl + Enter</b> save · <b>Esc</b> close</span>
+      <button class="btn btn-secondary" id="editCopy" title="Copy the report text as it is in the box"><i data-icon="copy" data-size="15" data-stroke="2"></i>Copy Text</button>
       <button class="btn btn-secondary" data-close>Cancel</button>
       <button class="btn btn-primary" id="editSave" style="min-width: 140px;">Save Changes</button>
     </div>
@@ -3966,18 +3941,17 @@ kbd {
   <div class="modal modal-md">
     <span class="dialog-title">Keyboard Shortcuts</span>
     <table class="keys">
-      <tr><td><kbd>Ctrl + Enter</kbd></td><td>Save the report · in a dialog: save it · on the board: file the checked tasks</td></tr>
-      <tr><td><kbd>Enter</kbd></td><td>In the report: new line</td></tr>
+      <tr><td><kbd>Ctrl + Enter</kbd></td><td>In a dialog: save it · on the board: file the checked tasks · on Reports: copy the selected reports</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>In the add-task box: add the task</td></tr>
       <tr><td><kbd>Shift + Enter</kbd></td><td>In the add-task box: new line in the task</td></tr>
-      <tr><td><kbd>Ctrl + B</kbd></td><td>Switch between Report and Board</td></tr>
-      <tr><td><kbd>Ctrl + H</kbd></td><td>Previous reports</td></tr>
+      <tr><td><kbd>Ctrl + B</kbd></td><td>Switch between Board and Reports</td></tr>
+      <tr><td><kbd>Ctrl + H</kbd></td><td>Task reports</td></tr>
       <tr><td><kbd>&#8593;</kbd> <kbd>&#8595;</kbd> <kbd>Enter</kbd></td><td>In the project box: pick from the list, or type a new name and press Enter</td></tr>
       <tr><td><kbd>Alt + &#8593;</kbd> / <kbd>Alt + &#8595;</kbd></td><td>On a focused task: move it up or down</td></tr>
       <tr><td><kbd>Ctrl + V</kbd></td><td>In a task's files: paste an image</td></tr>
       <tr><td><kbd>Ctrl + Z</kbd></td><td>Undo the last delete, file or clear (outside a text box)</td></tr>
       <tr><td><kbd id="helpHotkey">Ctrl + Alt + T</kbd></td><td>Quick-add a task from anywhere (tray)</td></tr>
-      <tr><td><kbd>Esc</kbd></td><td>Close a dialog or the history panel — asks first if there are unsaved changes</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close a dialog — asks first if there are unsaved changes</td></tr>
     </table>
     <p class="hint">The terminal console, when there is one, is live at the same time - a report filed there shows up here.</p>
     <div class="modal-actions" style="justify-content: flex-end;"><button class="btn btn-secondary" data-close>Close</button></div>
@@ -4045,10 +4019,7 @@ const IS_APP = Boolean(CFG.app);
 const IS_QUICK = CFG.mode === "quick";
 
 const $ = (id) => document.getElementById(id);
-const editor = $("editor");
 const statusEl = $("status");
-const counterEl = $("counter");
-const saveBtn = $("saveBtn");
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -4159,10 +4130,10 @@ function setStatus(text, kind) {
   statusEl.className = "status" + (kind ? " " + kind : "");
 }
 
-// A transient message that decays back to whatever the counter thinks.
+// A transient message that decays back to the selection summary.
 function flashStatus(text, kind) {
   setStatus(text, kind);
-  statusTimer = setTimeout(() => { statusTimer = null; updateCounter(); }, 6000);
+  statusTimer = setTimeout(() => { statusTimer = null; updateSelection(); }, 6000);
 }
 
 let boardStatusTimer = null;
@@ -4182,7 +4153,7 @@ function flashBoard(text, kind) {
 // Whichever view is on screen owns the status line.
 function flashHere(text, kind) {
   if (currentView === "board") flashBoard(text, kind);
-  else if (currentView === "report") flashStatus(text, kind);
+  else if (currentView === "reports") flashStatus(text, kind);
   else showToast(text);
 }
 
@@ -4267,8 +4238,7 @@ async function copyImageBlob(blob) {
 
 /* ------------------------------------------------------------------ dialogs */
 
-// Each closable layer, top-most last.  The history panel is in here too, so
-// Esc always closes whatever is in front.
+// Each closable layer, top-most last, so Esc always closes whatever is in front.
 const openStack = [];
 // Dialogs that hold edits register how to tell, how to save and how to drop
 // them.  Closing one of those while it is dirty asks first.
@@ -4280,7 +4250,6 @@ function openModal(id) {
 }
 
 function closeModal(id) {
-  if (id === "historyPanel") { closeHistory(); return; }
   $(id).classList.remove("open");
   const at = openStack.indexOf(id);
   if (at !== -1) openStack.splice(at, 1);
@@ -4394,72 +4363,86 @@ function clearDraft(key) {
 
 window.addEventListener("pagehide", () => { if (draftTimer) { clearTimeout(draftTimer); writeDrafts(); } });
 
-/* ------------------------------------------------------------------- report */
+/* -------------------------------------------------------------- task reports */
 
-function updateCounter() {
-  const length = editor.value.length;
-  counterEl.textContent = length + " chars";
-  saveBtn.disabled = saving || !editor.value.trim();
-  if (statusTimer) return;
-  setStatus("Ready", null);
-}
-
-let saving = false;
-
-async function saveReport() {
-  if (saving) return;
-  const text = editor.value.trim();
-  if (!text) { flashStatus("Report cannot be empty", "danger"); editor.focus(); return; }
-
-  saving = true;
-  saveBtn.disabled = true;
-  setStatus("Saving…", null);
-  try {
-    const out = await api("/api/save", { text });
-    if (out.ok) {
-      editor.value = "";
-      clearDraft("report");
-      flashStatus(
-        out.queued
-          ? "Queued at " + out.timestamp + " - Excel has the workbook open"
-          : "Saved at " + out.timestamp + " ✓",
-        out.queued ? "warn" : "success"
-      );
-      if (out.queued) refreshBanner(true, (lastPing.pendingCount || 0) + 1);
-    } else {
-      flashStatus(out.message || "Could not save the report", "danger");
-    }
-  } catch (err) {
-    // The report is still in the box, so nothing is lost by retrying.
-    flashStatus("Lost contact with the reporter - your text is still here", "danger");
-  } finally {
-    saving = false;
-    updateCounter();
-    editor.focus();
-  }
-}
-
-/* ------------------------------------------------------- previous reports */
+// The workbook's reports, on their own tab.  Each one can be copied alone, or
+// ticked and copied together with others.
 
 let historyRows = [];
 let historyQueued = [];
-let historyOpen = false;
+// Keys of the ticked reports: "r<index>" for a workbook row, "q<datetime>"
+// for one still queued.
+const selectedReports = new Set();
 
-function openHistory() {
-  if (historyOpen) { $("historySearch").focus(); return; }
-  historyOpen = true;
-  document.body.classList.add("panel-open");
-  if (!openStack.includes("historyPanel")) openStack.push("historyPanel");
-  loadHistory();
-  setTimeout(() => $("historySearch").focus(), 30);
+function reportsShown() {
+  return currentView === "reports";
 }
 
-function closeHistory() {
-  historyOpen = false;
-  document.body.classList.remove("panel-open");
-  const at = openStack.indexOf("historyPanel");
-  if (at !== -1) openStack.splice(at, 1);
-  if (!openStack.length) focusView();
+function openHistory() {
+  if (!reportsShown()) setView("reports");
+  else $("historySearch").focus();
+}
+
+function reportKey(item, queued) {
+  return queued ? "q" + item.datetime : "r" + item.index;
+}
+
+// Every report in workbook order, queued ones last - the order they are
+// copied in, whatever order they were ticked in.
+function allReports() {
+  return historyRows.map((item) => ({ item, key: reportKey(item, false) }))
+    .concat(historyQueued.map((item) => ({ item, key: reportKey(item, true) })));
+}
+
+function shownReports() {
+  return allReports().filter((entry) => historyMatches(entry.item));
+}
+
+function updateSelection() {
+  const count = selectedReports.size;
+  $("copySelectedLabel").textContent = count ? "Copy Selected (" + count + ")" : "Copy Selected";
+  $("copySelectedBtn").disabled = !count;
+  $("clearSelectionBtn").disabled = !count;
+  const shown = shownReports();
+  const ticked = shown.filter((entry) => selectedReports.has(entry.key)).length;
+  const all = $("selectAllReports");
+  all.checked = shown.length > 0 && ticked === shown.length;
+  all.indeterminate = ticked > 0 && ticked < shown.length;
+  all.disabled = !shown.length;
+  if (statusTimer) return;
+  setStatus(count ? count + (count === 1 ? " report selected" : " reports selected") : "Ready", null);
+}
+
+function toggleReport(key, on) {
+  if (on) selectedReports.add(key); else selectedReports.delete(key);
+  const row = $("historyBody").querySelector('[data-key="' + CSS.escape(key) + '"]');
+  if (row) {
+    row.classList.toggle("is-selected", on);
+    row.querySelector(".check").checked = on;
+  }
+  updateSelection();
+}
+
+function selectAllShown(on) {
+  for (const entry of shownReports()) {
+    if (on) selectedReports.add(entry.key); else selectedReports.delete(entry.key);
+  }
+  renderHistory();
+}
+
+function clearSelection() {
+  selectedReports.clear();
+  renderHistory();
+}
+
+async function copySelected() {
+  const picked = allReports().filter((entry) => selectedReports.has(entry.key));
+  if (!picked.length) { flashStatus("Tick the reports to copy first", "warn"); return; }
+  // Each report under its date-time, a blank line between them.
+  const text = picked.map((entry) => entry.item.datetime + "\n" + String(entry.item.text).trim()).join("\n\n");
+  const ok = await copyText(text);
+  if (ok) flashStatus(picked.length + (picked.length === 1 ? " report" : " reports") + " copied ✓", "success");
+  else flashStatus("Could not reach the clipboard", "danger");
 }
 
 async function loadHistory() {
@@ -4473,6 +4456,9 @@ async function loadHistory() {
     body.appendChild(el("div", "empty", "Could not read the workbook."));
     return;
   }
+  // Ticks on reports that are gone (deleted, or a queued one merged in) drop.
+  const keys = new Set(allReports().map((entry) => entry.key));
+  for (const key of [...selectedReports]) if (!keys.has(key)) selectedReports.delete(key);
   fillHistoryProjects();
   renderHistory();
 }
@@ -4544,7 +4530,24 @@ function miniButton(name, title, danger, onClick) {
   return button;
 }
 
+// The tick box at the front of a report row.
+function reportRow(item, queued) {
+  const key = reportKey(item, queued);
+  const on = selectedReports.has(key);
+  const row = el("div", "h-row" + (on ? " is-selected" : ""));
+  row.dataset.key = key;
+  const box = el("input", "check");
+  box.type = "checkbox";
+  box.checked = on;
+  box.title = "Select to copy together with other reports";
+  box.setAttribute("aria-label", "Select report " + item.datetime);
+  box.addEventListener("change", () => toggleReport(key, box.checked));
+  row.appendChild(box);
+  return row;
+}
+
 function renderHistory() {
+  updateSelection();
   const body = $("historyBody");
   const needle = $("historySearch").value.trim().toLowerCase();
   body.innerHTML = "";
@@ -4557,7 +4560,7 @@ function renderHistory() {
   if (queued.length) {
     body.appendChild(el("div", "queued-strip", "Queued — not in the workbook yet"));
     for (const item of queued) {
-      const row = el("div", "h-row");
+      const row = reportRow(item, true);
       row.appendChild(el("span", "h-num", ""));
       const main = el("div", "h-main");
       const when = el("span", "h-when", item.datetime);
@@ -4580,7 +4583,7 @@ function renderHistory() {
   // Newest first, but numbered by their real position in the workbook.
   for (let i = rows.length - 1; i >= 0; i--) {
     const item = rows[i];
-    const row = el("div", "h-row");
+    const row = reportRow(item, false);
     row.appendChild(el("span", "h-num", String(item.index + 1)));
     const main = el("div", "h-main");
     main.appendChild(el("span", "h-when", item.datetime));
@@ -4611,6 +4614,9 @@ async function deleteReport(index) {
     return;
   }
   if (!out.ok) { showToast(out.message || "Could not delete the report."); return; }
+  // Rows below the deleted one move up a place, so their ticks would land on
+  // the wrong reports.
+  selectedReports.clear();
   await loadHistory();
   // The row is kept here, so Undo can put it back exactly where it was.
   const kept = { index: item.index, datetime: item.datetime, text: item.text };
@@ -4622,16 +4628,18 @@ async function deleteReport(index) {
     } catch (err) {
       showToast("Lost contact with the reporter. The report was not restored.");
     }
-    if (historyOpen) loadHistory();
+    selectedReports.clear();
+    if (reportsShown()) loadHistory();
   });
 }
 
-$("historyBtn").addEventListener("click", () => (historyOpen ? closeHistory() : openHistory()));
-$("historyClose").addEventListener("click", closeHistory);
-$("historyScrim").addEventListener("click", closeHistory);
+$("historyBtn").addEventListener("click", openHistory);
 $("historySearch").addEventListener("input", renderHistory);
 $("historyProject").addEventListener("change", renderHistory);
 $("viewQueuedBtn").addEventListener("click", openHistory);
+$("selectAllReports").addEventListener("change", (event) => selectAllShown(event.target.checked));
+$("clearSelectionBtn").addEventListener("click", clearSelection);
+$("copySelectedBtn").addEventListener("click", copySelected);
 
 /* -------------------------------------------------------------- report edit */
 
@@ -4688,7 +4696,7 @@ async function saveEdit() {
   }
   editOriginal = editSnapshot();
   closeModal("editBackdrop");
-  if (historyOpen) await loadHistory();
+  if (reportsShown()) await loadHistory();
   showToast("Report saved to the workbook");
   return true;
 }
@@ -4704,6 +4712,10 @@ guarded.editBackdrop = {
 $("editWhen").addEventListener("input", editChanged);
 $("editText").addEventListener("input", editChanged);
 $("editSave").addEventListener("click", saveEdit);
+$("editCopy").addEventListener("click", async () => {
+  const ok = await copyText($("editText").value);
+  showToast(ok ? "Report text copied" : "Could not reach the clipboard");
+});
 
 /* --------------------------------------------------------- session heartbeat */
 
@@ -4717,8 +4729,6 @@ let lastPing = { workbookOpen: false, pendingCount: 0 };
 function endSession(reason) {
   if (ended) return;
   ended = true;
-  saveBtn.disabled = true;
-  editor.readOnly = true;
   $("goneText").textContent =
     "Task Reporter session ended" + (reason ? " - " + reason : "") + ".\nYou can close this window.";
   $("gone").classList.add("open");
@@ -4768,7 +4778,7 @@ async function ping() {
       const dropped = lastPing.pendingCount > 0 && pending === 0;
       lastPing = { workbookOpen: Boolean(out.workbookOpen), pendingCount: pending };
       refreshBanner(lastPing.workbookOpen, pending);
-      if (dropped && historyOpen) loadHistory();
+      if (dropped && reportsShown()) loadHistory();
     }
     for (const command of out.commands || []) runCommand(command);
     // The terminal and the tray window can add, tick and file tasks too.  The
@@ -4783,7 +4793,8 @@ async function ping() {
 // Things Python asks the page to do: the tray menu, mostly.
 function runCommand(command) {
   if (command === "history") { if (!IS_QUICK) openHistory(); }
-  else if (command === "board" || command === "report") { if (!IS_QUICK) setView(command); }
+  else if (command === "board") { if (!IS_QUICK) setView("board"); }
+  else if (command === "report" || command === "reports") { if (!IS_QUICK) setView("reports"); }
   else if (command === "requestClose") requestWindowClose();
   else if (command === "quickShow") quickShown();
 }
@@ -4828,7 +4839,7 @@ let boardLoaded = false;
 let showFiledTasks = false;
 let projectFilter = "all";
 let previewGroups = [];
-let currentView = "report";
+let currentView = "board";
 try { projectFilter = localStorage.getItem("taskReporterFilter") || "all"; } catch (err) { /* private mode */ }
 
 /* --------------------------------------------------------------------- dates */
@@ -5269,6 +5280,7 @@ function taskRow(task) {
     (task.done_at ? "\nTicked " + task.done_at : "") + (filed ? "\nFiled " + task.filed_at : "");
   row.appendChild(meta);
 
+  row.appendChild(miniButton("copy", "Copy task text", false, () => copyTask(task.text)));
   row.appendChild(miniButton("pencil", "Edit task & files", false, () => openTaskEdit(task.id)));
   row.appendChild(miniButton("trash", "Delete", true, () => deleteTask(task)));
 
@@ -5287,6 +5299,11 @@ function taskRow(task) {
   });
   wireTaskDrag(row, task);
   return row;
+}
+
+async function copyTask(text) {
+  const ok = await copyText(text);
+  flashHere(ok ? "Task copied ✓" : "Could not reach the clipboard", ok ? "success" : "danger");
 }
 
 /* ------------------------------------------------------------- drag & drop */
@@ -5762,6 +5779,7 @@ guarded.taskEditBackdrop = {
 ["tDate", "tProject", "tText"].forEach((id) => $(id).addEventListener("input", taskChanged));
 $("tDate").addEventListener("change", taskChanged);
 $("tSave").addEventListener("click", saveTaskEdit);
+$("tCopy").addEventListener("click", () => copyTask($("tText").value));
 $("tFilesAdd").addEventListener("click", () => $("tFilesInput").click());
 $("tDrop").addEventListener("click", () => $("tFilesInput").click());
 $("tDrop").addEventListener("keydown", (event) => {
@@ -5923,23 +5941,23 @@ async function confirmFiling() {
 
 /* ------------------------------------------------------------ view switching */
 
-const VIEW_NAMES = { report: "Report", board: "Board", settings: "Settings" };
-let viewBeforeSettings = "report";
+const VIEW_NAMES = { board: "Board", reports: "Reports", settings: "Settings" };
+let viewBeforeSettings = "board";
 
 function focusView() {
   if (IS_QUICK) { $("qText").focus(); return; }
   if (currentView === "board") $("taskText").focus();
-  else if (currentView === "report") editor.focus();
+  else if (currentView === "reports") $("historySearch").focus();
 }
 
 function setView(name) {
-  if (!VIEW_NAMES[name]) name = "report";
+  if (!VIEW_NAMES[name]) name = "board";
   if (name === "settings" && currentView !== "settings") viewBeforeSettings = currentView;
   currentView = name;
-  $("reportView").classList.toggle("hidden", name !== "report");
+  $("reportsView").classList.toggle("hidden", name !== "reports");
   $("boardView").classList.toggle("hidden", name !== "board");
   $("settingsView").classList.toggle("hidden", name !== "settings");
-  $("tabReport").classList.toggle("is-on", name === "report");
+  $("tabReports").classList.toggle("is-on", name === "reports");
   $("tabBoard").classList.toggle("is-on", name === "board");
   $("settingsBtn").classList.toggle("is-on", name === "settings");
   $("winSub").textContent = "— " + VIEW_NAMES[name];
@@ -5948,6 +5966,7 @@ function setView(name) {
     try { localStorage.setItem("taskReporterView", name); } catch (err) { /* private mode */ }
   }
   if (name === "board") { loadBoard(); setTimeout(() => fitTaskBox($("taskText")), 0); }
+  if (name === "reports") loadHistory();
   if (name === "settings") loadSettings();
   focusView();
 }
@@ -6305,23 +6324,22 @@ document.addEventListener("keydown", (event) => {
     if (top === "editBackdrop") saveEdit();
     else if (top === "taskEditBackdrop") saveTaskEdit();
     else if (top === "previewBackdrop") confirmFiling();
-    else if (!top || top === "historyPanel") {
-      // Same meaning on both views: commit what is in front of you.
+    else if (!top) {
       if (currentView === "board") startFiling();
-      else if (currentView === "report") saveReport();
+      else if (currentView === "reports") copySelected();
     }
     return;
   }
   if (IS_QUICK) return;
   if (accel && !event.shiftKey && (event.key === "h" || event.key === "H")) {
     event.preventDefault();
-    if (historyOpen) closeHistory(); else openHistory();
+    setView(currentView === "reports" ? "board" : "reports");
     return;
   }
   if (accel && !event.shiftKey && (event.key === "b" || event.key === "B")) {
-    if (top && top !== "historyPanel") return;
+    if (top) return;
     event.preventDefault();
-    setView(currentView === "board" ? "report" : "board");
+    setView(currentView === "board" ? "reports" : "board");
     return;
   }
   // Ctrl+Z in a text box is the text's own undo; anywhere else it is the toast's.
@@ -6364,13 +6382,11 @@ function restoreEditDraft() {
 }
 
 function startMain() {
-  editor.addEventListener("input", () => { updateCounter(); setDraft("report", editor.value); });
-  saveBtn.addEventListener("click", saveReport);
   const revealBtn = $("revealBtn");
   revealBtn.title = "Show " + CFG.workbook + " in Explorer";
   revealBtn.addEventListener("click", () => openKnown("workbook", true));
   $("helpBtn").addEventListener("click", () => openModal("helpBackdrop"));
-  $("tabReport").addEventListener("click", () => setView("report"));
+  $("tabReports").addEventListener("click", () => setView("reports"));
   $("tabBoard").addEventListener("click", () => setView("board"));
   $("composer").addEventListener("submit", addTask);
   $("fileBtn").addEventListener("click", startFiling);
@@ -6393,7 +6409,8 @@ function startMain() {
 
   // Drafts typed before the window last closed, and the project the last
   // run of tasks went under - tasks arrive in runs, so it is kept.
-  if (drafts.report) { editor.value = drafts.report; }
+  // The free-text report box is gone; a draft left in it has nowhere to go.
+  if (drafts.report) clearDraft("report");
   if (drafts.task) { taskText.value = drafts.task; }
   try { $("taskProject").value = localStorage.getItem("taskReporterProject") || ""; } catch (err) { /* private mode */ }
   $("taskProject").addEventListener("input", () => {
@@ -6402,14 +6419,12 @@ function startMain() {
 
   tickClock();
   setInterval(tickClock, 1000);
-  updateCounter();
-  if (drafts.report) flashStatus("Restored the report you were writing", "warn");
 
   $("taskDate").value = isoToday();
-  let startView = "report";
-  try { startView = localStorage.getItem("taskReporterView") || "report"; } catch (err) { /* private mode */ }
-  setView(startView === "board" ? "board" : "report");
-  if (startView !== "board") loadBoard();
+  let startView = "board";
+  try { startView = localStorage.getItem("taskReporterView") || "board"; } catch (err) { /* private mode */ }
+  setView(startView === "reports" ? "reports" : "board");
+  if (startView === "reports") loadBoard();
   syncThemeRadios();
 }
 
