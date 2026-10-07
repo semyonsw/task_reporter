@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 78,
+  "seq": 79,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -958,10 +958,10 @@
       "date": "2026-10-06",
       "project": "Blot",
       "text": "remove the line between baza-blot writting in every text, ui, logo, names, etc.. the users should only see it without the line",
-      "done": false,
+      "done": true,
       "created_at": "06/10/2026 19:07:02",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "07/10/2026 20:32:24",
+      "filed_at": "07/10/2026 20:32:34",
       "files": []
     },
     {
@@ -997,10 +997,10 @@
       "date": "2026-10-07",
       "project": "Blot",
       "text": "separate the xosal and xaxal types of rules of the ai partner , they should be separated from each other with maybe different tabs\n\nwhen user clicks to the ai partner, make that more visual and engagig, so user should know that the default is just a bot named Ani, and that the new created ai partner isnt selected automatically.\n\nwhen user selects the ai partner it isnt selecting in the game and in the game the 'Ani' plays, fix that so the ai should play using the corresponding users rules.\n\nthen user types rules make for the user nice items from the rules, so the rules should be separated.",
-      "done": false,
+      "done": true,
       "created_at": "07/10/2026 20:05:27",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "07/10/2026 20:32:21",
+      "filed_at": "07/10/2026 20:32:34",
       "files": []
     },
     {
@@ -1015,9 +1015,23 @@
       "done_at": null,
       "filed_at": null,
       "files": []
+    },
+    {
+      "id": "mPo8wM2jFXk",
+      "seq": 79,
+      "order": null,
+      "date": "2026-10-07",
+      "project": "task-report",
+      "text": "add copy button for every task report text",
+      "done": false,
+      "created_at": "07/10/2026 20:29:27",
+      "done_at": null,
+      "filed_at": null,
+      "files": []
     }
   ],
   "projects": [
+    "task-report",
     "ai-agents-scores",
     "Blot",
     "cc-kpi-onex",
