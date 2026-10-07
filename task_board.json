@@ -1022,11 +1022,11 @@
       "order": null,
       "date": "2026-10-07",
       "project": "task-report",
-      "text": "add copy button for every task report text",
-      "done": false,
+      "text": "add copy button for every task report text in the main page of the ui and in teh editing window also\n\nalso remove the free text task report section, no needed\n\nalso make nice feature which will allow user to select some of the reports and copy them together.",
+      "done": true,
       "created_at": "07/10/2026 20:29:27",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "07/10/2026 21:42:29",
+      "filed_at": "07/10/2026 21:42:33",
       "files": []
     },
     {
@@ -1069,8 +1069,8 @@
     }
   ],
   "projects": [
-    "ai-agents-scores",
     "task-report",
+    "ai-agents-scores",
     "Blot",
     "cc-kpi-onex",
     "DealFinder",
