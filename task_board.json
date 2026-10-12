@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 81,
+  "seq": 83,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1066,13 +1066,39 @@
           "added_at": "07/10/2026 20:43:11"
         }
       ]
+    },
+    {
+      "id": "blsCmMk3pe4",
+      "seq": 82,
+      "order": null,
+      "date": "2026-10-09",
+      "project": "cc-kpi-onex",
+      "text": "make onex-hr-insighhts api for cc-kpi-onex project",
+      "done": false,
+      "created_at": "09/10/2026 19:48:34",
+      "done_at": null,
+      "filed_at": null,
+      "files": []
+    },
+    {
+      "id": "SfdvooJ0tpM",
+      "seq": 83,
+      "order": null,
+      "date": "2026-10-12",
+      "project": "cc-kpi-onex",
+      "text": "improve the ui to be more close to the prototype",
+      "done": true,
+      "created_at": "12/10/2026 19:05:49",
+      "done_at": "12/10/2026 19:05:51",
+      "filed_at": "12/10/2026 19:05:53",
+      "files": []
     }
   ],
   "projects": [
+    "cc-kpi-onex",
     "task-report",
     "ai-agents-scores",
     "Blot",
-    "cc-kpi-onex",
     "DealFinder",
     "ONEX-Academy",
     "Buy For Me",
