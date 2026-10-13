@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 83,
+  "seq": 84,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1074,10 +1074,10 @@
       "date": "2026-10-09",
       "project": "cc-kpi-onex",
       "text": "make onex-hr-insighhts api for cc-kpi-onex project",
-      "done": false,
+      "done": true,
       "created_at": "09/10/2026 19:48:34",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "13/10/2026 19:43:34",
+      "filed_at": "13/10/2026 19:43:37",
       "files": []
     },
     {
@@ -1091,6 +1091,19 @@
       "created_at": "12/10/2026 19:05:49",
       "done_at": "12/10/2026 19:05:51",
       "filed_at": "12/10/2026 19:05:53",
+      "files": []
+    },
+    {
+      "id": "wvP9rflXhM0",
+      "seq": 84,
+      "order": null,
+      "date": "2026-10-13",
+      "project": "cc-kpi-onex",
+      "text": "Add two secrets in Lovable → Cloud → Secrets: SUPPORT_QUALITY_API_URL and SUPPORT_QUALITY_API_KEY (the value is in the support-quality-api folder's README). Without them the sync bar shows \"temporarily unavailable\".\n\nApply the database change 0006_support_quality_and_agent_logins.sql. It adds the link column and changes how new accounts get a role. I added it to the migration list but couldn't confirm that Lovable runs it automatically, so check it has run before using the new screens. Until it does, saving agents will fail.\n\nTurn off public sign-ups in Lovable Cloud's auth settings, and limit Google sign-in to onex.am or turn it off. Code alone can't fully block someone registering through the public API.\n\nLink each agent to their HR Insights agent, then create their logins.",
+      "done": false,
+      "created_at": "13/10/2026 19:43:03",
+      "done_at": null,
+      "filed_at": null,
       "files": []
     }
   ],
