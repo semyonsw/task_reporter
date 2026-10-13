@@ -516,10 +516,10 @@
       "date": "2026-09-11",
       "project": "local computer improvements",
       "text": "make sure the vs code wsl system is by default for any actions",
-      "done": false,
+      "done": true,
       "created_at": "10/09/2026 14:53:04",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "13/10/2026 16:04:29",
+      "filed_at": "13/10/2026 16:04:33",
       "files": []
     },
     {
