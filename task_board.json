@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 85,
+  "seq": 86,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1118,11 +1118,24 @@
       "done_at": null,
       "filed_at": null,
       "files": []
+    },
+    {
+      "id": "RUjZYH7LD4U",
+      "seq": 86,
+      "order": null,
+      "date": "2026-10-14",
+      "project": "cc-kpi-onex",
+      "text": "make the cc-kpi-onex website ready to use",
+      "done": true,
+      "created_at": "14/10/2026 15:22:33",
+      "done_at": "14/10/2026 16:00:23",
+      "filed_at": "14/10/2026 16:00:25",
+      "files": []
     }
   ],
   "projects": [
-    "ai-agents-scores",
     "cc-kpi-onex",
+    "ai-agents-scores",
     "task-report",
     "Blot",
     "DealFinder",
