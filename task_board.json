@@ -1113,10 +1113,10 @@
       "date": "2026-10-13",
       "project": "ai-agents-scores",
       "text": "Do the latest tasks Anna said to do (remove the scores label, etc..)",
-      "done": false,
+      "done": true,
       "created_at": "13/10/2026 19:44:05",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "14/10/2026 16:00:26",
+      "filed_at": "14/10/2026 16:00:29",
       "files": []
     },
     {
