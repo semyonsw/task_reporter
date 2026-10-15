@@ -1010,10 +1010,10 @@
       "date": "2026-10-07",
       "project": "ai-agents-scores",
       "text": "make the score and level editing function button to be more visual showing for the users so user can understand that it's editable.",
-      "done": false,
+      "done": true,
       "created_at": "07/10/2026 20:15:42",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "15/10/2026 19:41:37",
+      "filed_at": "15/10/2026 19:41:39",
       "files": []
     },
     {
