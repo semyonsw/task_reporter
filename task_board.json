@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 86,
+  "seq": 87,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1131,9 +1131,23 @@
       "done_at": "14/10/2026 16:00:23",
       "filed_at": "14/10/2026 16:00:25",
       "files": []
+    },
+    {
+      "id": "tbPOtOumWq0",
+      "seq": 87,
+      "order": null,
+      "date": "2026-10-19",
+      "project": "onex-hr-insights",
+      "text": "Make the team picture to be dynamically changing corresponding to the uploaded image.",
+      "done": true,
+      "created_at": "19/10/2026 15:01:36",
+      "done_at": "19/10/2026 15:49:10",
+      "filed_at": "19/10/2026 15:49:12",
+      "files": []
     }
   ],
   "projects": [
+    "onex-hr-insights",
     "cc-kpi-onex",
     "ai-agents-scores",
     "task-report",
