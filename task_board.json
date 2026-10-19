@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 87,
+  "seq": 89,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1144,11 +1144,37 @@
       "done_at": "19/10/2026 15:49:10",
       "filed_at": "19/10/2026 15:49:12",
       "files": []
+    },
+    {
+      "id": "qclgq5Xczu0",
+      "seq": 88,
+      "order": null,
+      "date": "2026-10-19",
+      "project": "onex-hr-insights",
+      "text": "IN HR COMPUTER make new api's which should send the necessary data from to the cc-kpi-onex",
+      "done": true,
+      "created_at": "19/10/2026 15:50:22",
+      "done_at": "19/10/2026 18:33:36",
+      "filed_at": "19/10/2026 18:33:41",
+      "files": []
+    },
+    {
+      "id": "mC_Os7dN9Qk",
+      "seq": 89,
+      "order": null,
+      "date": "2026-10-19",
+      "project": "cc-kpi-onex",
+      "text": "connect and show the necessary new apis from the onex-hr-insights",
+      "done": true,
+      "created_at": "19/10/2026 15:51:36",
+      "done_at": "19/10/2026 18:33:38",
+      "filed_at": "19/10/2026 18:33:41",
+      "files": []
     }
   ],
   "projects": [
-    "onex-hr-insights",
     "cc-kpi-onex",
+    "onex-hr-insights",
     "ai-agents-scores",
     "task-report",
     "Blot",
