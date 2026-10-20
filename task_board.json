@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 89,
+  "seq": 91,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1170,6 +1170,44 @@
       "done_at": "19/10/2026 18:33:38",
       "filed_at": "19/10/2026 18:33:41",
       "files": []
+    },
+    {
+      "id": "fbWRqKqu9P4",
+      "seq": 90,
+      "order": null,
+      "date": "2026-10-20",
+      "project": "cc-kpi-onex",
+      "text": "make this page's scores and editing custom for week or month (admin decides)\n\nmake editable each cell(each value) in the row.\n\nadmin should decide whether it should be weekly score inputting or monthly with ability to change to monthly updating(weekly updating is mandatory and is set by default), and user's pages should be updated (their scores, statistics etc.. every week, admin should update the scores and other numbers, values)",
+      "done": true,
+      "created_at": "20/10/2026 16:05:24",
+      "done_at": "20/10/2026 19:22:59",
+      "filed_at": "20/10/2026 19:23:03",
+      "files": [
+        {
+          "name": "pasted-20261020-160530.png",
+          "size": 109453,
+          "added_at": "20/10/2026 16:06:18"
+        }
+      ]
+    },
+    {
+      "id": "mEeXpc7woBk",
+      "seq": 91,
+      "order": null,
+      "date": "2026-10-20",
+      "project": "cc-kpi-onex",
+      "text": "the level kpi's should be custom adjustable by admin",
+      "done": true,
+      "created_at": "20/10/2026 16:19:13",
+      "done_at": "20/10/2026 19:23:01",
+      "filed_at": "20/10/2026 19:23:03",
+      "files": [
+        {
+          "name": "pasted-20261020-161916.png",
+          "size": 15660,
+          "added_at": "20/10/2026 16:19:31"
+        }
+      ]
     }
   ],
   "projects": [
