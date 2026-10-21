@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 91,
+  "seq": 93,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1208,6 +1208,32 @@
           "added_at": "20/10/2026 16:19:31"
         }
       ]
+    },
+    {
+      "id": "FNQlIAow1eE",
+      "seq": 92,
+      "order": null,
+      "date": "2026-10-21",
+      "project": "cc-kpi-onex",
+      "text": "pastaci amsakan zangery - missed/not missed etc. calls",
+      "done": true,
+      "created_at": "21/10/2026 16:00:47",
+      "done_at": "21/10/2026 19:59:32",
+      "filed_at": "21/10/2026 19:59:35",
+      "files": []
+    },
+    {
+      "id": "e_R1PU6S7CE",
+      "seq": 93,
+      "order": null,
+      "date": "2026-10-21",
+      "project": "cc-kpi-onex",
+      "text": "'Completed calls' should be got from ladesk= calls + outgoing calls",
+      "done": true,
+      "created_at": "21/10/2026 17:15:55",
+      "done_at": "21/10/2026 19:59:33",
+      "filed_at": "21/10/2026 19:59:35",
+      "files": []
     }
   ],
   "projects": [
