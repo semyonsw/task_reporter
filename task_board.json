@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 95,
+  "seq": 96,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1259,6 +1259,19 @@
       "created_at": "21/10/2026 20:08:05",
       "done_at": "22/10/2026 18:34:25",
       "filed_at": "22/10/2026 18:34:28",
+      "files": []
+    },
+    {
+      "id": "muRqISJUHpY",
+      "seq": 96,
+      "order": null,
+      "date": "2026-10-22",
+      "project": "cc-kpi-onex",
+      "text": "remove armenian language entirely from the website, keep only english.\n\ndelete the customer rating column in scorecard (screenshot provided), it is unnecessary column, no longer needed.\n\nwhen registering new user (when cheching the checkbox from the ladesk agents list), it should be 'Desk' or 'Call/Chat' options with dropdown, and when selected call/chat it should spawn another dropdown to select one of the 3 levels, desk dont have levels.\n\ncall/chat same columns\n\nin scorecard motivation make two sections: desk and call/chat with corresponding columns desk workers should have two columns(customer rating column removed) and the call/chat agents should have the same columns (2nd screenshot, from agent name to teamwork)\n\nfix the test accounts with corresponding scores and profile, so they should have correct level showing animations, perks avialable, etc... so we can see how the uesr can see her profile page\n\nin the user profile's perks section perks should be with choosing option gold/silver or other avaliable level perks, so at the top of the perks section there should be all avialable(all active achieved) levels (the levels up to user's current level(if bronze only show bronze and other non-avialables non-clickable and with a nice user friendly lock on it)) and perk options should be with Flipping option with arrow left and right (they can flip in infinite loop from the last to first, etc... you got it), and if selected e.g. silver, the silver level perks should be flipping endlessly with arrow buttons and with nice gamy smooth animations, every perk should be with its description, selecting options, etc..\n\nadmin should have some place to see which user selected which perk. (maybe name 'perk selections' at the top of the website, it would be one of the main sections of the website), also selected perks should be visible from any data row that admin sees for the user, like in three dots also be the \"see selected perks\" or something like that\n\nadd to perk options the free text option, so user can see some selectable options and one of them: free option (admin decides which one should it be with nice free text checkbox), and admin also can make a perk selecting, which have one and only option of free text. Users should have nice user friendly text inputting field under the perk, or it should be one of the options, user can paste there text , type something, etc...\n\nin rules section's level target subsection make sure that the added rules are connected with & operator, so for a specific level all criteria should match (3rd screenshot)\n\nalso in user profile show absence and lates numberes in that one square (4th screenshot)\n\nin team section also the profiles should be separated/grouped as call/chat or desk, with corresponding subsection: desk or call/chat\n\nadd started working date in user profile edit window settable by admin with nice calendar day selecting feature. Also add to the level editing section a period, which will last level untill automatically changing level to the next one, so using that and seeing when the agent was started working agent gets its level automatically (admin still can edit that, and if admin edited that, there should spawn a button \"automatic setting level\" and a not that e.g. 'the agent is level 3 but should be 2' or 'the agent is level 1 but should be 2' based on the 'started working' date and today's calendar)\n\nask questions if you have any, make sure you understood the tasks correct.\n\ndelete the 'my weeks' from user profile page, user don't need to see that weekly things\n\ndelete 'days worked' column from any rows in data showing, no need that data.\n\nremove all the week-by-week things, make the data inserting for the whole month in the productivity, and the result should be numberes of the 1st day of the month to the last day, no other month day including.\n\nDo not invent anything if you have any questions or any misunderstandings, just ask me and I will answer that with that, follow-up questions you have that feature.",
+      "done": true,
+      "created_at": "22/10/2026 18:46:53",
+      "done_at": "22/10/2026 18:46:55",
+      "filed_at": "22/10/2026 18:46:56",
       "files": []
     }
   ],
