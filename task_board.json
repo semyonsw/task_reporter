@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 96,
+  "seq": 97,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1273,12 +1273,25 @@
       "done_at": "22/10/2026 18:46:55",
       "filed_at": "22/10/2026 18:46:56",
       "files": []
+    },
+    {
+      "id": "6UbVHhaofSE",
+      "seq": 97,
+      "order": null,
+      "date": "2026-10-22",
+      "project": "ai-agents-scores",
+      "text": "ONEX KPI website updates\n\nImproved the Productivity page layout and fixed squeezed table columns.\nAdded a clear Done button for missed calls, so totals update only after confirmation.\nUpdated monthly KPI calculations: completed calls, missed calls, total calls, target, and achieved KPI.\nAdded clearer messages when hours or missed calls are missing.\nImproved the agent table with readable names, values, and responsive spacing.\nKept Ladesk completed calls read-only and used them for monthly productivity.\nUpdated employee levels, rewards, attendance, and profile information.\nRemoved unused weekly and daily productivity screens.\nImproved admin controls for agents, levels, rewards, and monthly data.\nChecked main admin pages for layout issues and visible errors.",
+      "done": true,
+      "created_at": "22/10/2026 19:56:47",
+      "done_at": "22/10/2026 19:56:52",
+      "filed_at": "22/10/2026 19:56:54",
+      "files": []
     }
   ],
   "projects": [
+    "ai-agents-scores",
     "cc-kpi-onex",
     "onex-hr-insights",
-    "ai-agents-scores",
     "task-report",
     "Blot",
     "DealFinder",
