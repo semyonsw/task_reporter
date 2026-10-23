@@ -1294,10 +1294,10 @@
       "date": "2026-10-22",
       "project": "ai-agents-scores",
       "text": "change the absences and lates showing in the user profile page",
-      "done": false,
+      "done": true,
       "created_at": "22/10/2026 19:57:32",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "23/10/2026 20:09:36",
+      "filed_at": "23/10/2026 20:09:43",
       "files": []
     },
     {
