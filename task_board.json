@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 97,
+  "seq": 99,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1286,11 +1286,37 @@
       "done_at": "22/10/2026 19:56:52",
       "filed_at": "22/10/2026 19:56:54",
       "files": []
+    },
+    {
+      "id": "MNgmgDF9aoA",
+      "seq": 98,
+      "order": null,
+      "date": "2026-10-22",
+      "project": "ai-agents-scores",
+      "text": "change the absences and lates showing in the user profile page",
+      "done": false,
+      "created_at": "22/10/2026 19:57:32",
+      "done_at": null,
+      "filed_at": null,
+      "files": []
+    },
+    {
+      "id": "jQp-EQ6Ems8",
+      "seq": 99,
+      "order": null,
+      "date": "2026-10-23",
+      "project": "cc-kpi-onex",
+      "text": "1. Three Agent Role Types (Call, Chat, Desk)\n\nAdded Call, Chat, and Desk profile categories when creating or editing agents.\nIsolated call grading so only Call agents are calculated in the monthly Productivity table and team targets.\nCreated the new Desk profile layout featuring Customer Feedback, Google Review Comments, and an impact overview.\nAdded clean \"Coming soon\" placeholders across Productivity, Scorecards, and profiles for Chat and Desk until their custom formulas and APIs are set up.\n2. Bug Fixes & Refinements\n\nFixed placeholder visibility so Chat and Desk sections only appear when agents with those roles are present.\nVerified that October team totals, manual missed calls, and monthly target calculations run without errors.\n3. Quality Assurance & Live Deployment\n\nRan full automated test suite (all 147 tests passed) and completed TypeScript checks.\nPerformed admin verification across the Productivity, Scorecard, Levels, and Team views.\nPublished the updated build live to https://cc-kpi-onex.lovable.app.",
+      "done": true,
+      "created_at": "23/10/2026 20:09:28",
+      "done_at": "23/10/2026 20:09:30",
+      "filed_at": "23/10/2026 20:09:32",
+      "files": []
     }
   ],
   "projects": [
-    "ai-agents-scores",
     "cc-kpi-onex",
+    "ai-agents-scores",
     "onex-hr-insights",
     "task-report",
     "Blot",
