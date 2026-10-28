@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 100,
+  "seq": 101,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1324,6 +1324,19 @@
       "created_at": "27/10/2026 16:08:28",
       "done_at": "28/10/2026 15:47:19",
       "filed_at": "28/10/2026 15:47:22",
+      "files": []
+    },
+    {
+      "id": "NiYZwLbPbg4",
+      "seq": 101,
+      "order": null,
+      "date": "2026-10-28",
+      "project": "cc-kpi-onex",
+      "text": "get the documentation for the Lilit Baghdasaryan and make out of them tesks, and start doing them.",
+      "done": true,
+      "created_at": "28/10/2026 15:47:48",
+      "done_at": "28/10/2026 20:02:42",
+      "filed_at": "28/10/2026 20:02:45",
       "files": []
     }
   ],
