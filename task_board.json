@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 99,
+  "seq": 100,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1311,6 +1311,19 @@
       "created_at": "23/10/2026 20:09:28",
       "done_at": "23/10/2026 20:09:30",
       "filed_at": "23/10/2026 20:09:32",
+      "files": []
+    },
+    {
+      "id": "BPoIkSoORzM",
+      "seq": 100,
+      "order": null,
+      "date": "2026-10-27",
+      "project": "cc-kpi-onex",
+      "text": "Meet with Lilit Baghdasaryan and make tasks, start doing them",
+      "done": true,
+      "created_at": "27/10/2026 16:08:28",
+      "done_at": "28/10/2026 15:47:19",
+      "filed_at": "28/10/2026 15:47:22",
       "files": []
     }
   ],
