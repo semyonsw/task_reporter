@@ -1346,10 +1346,10 @@
       "date": "2026-10-29",
       "project": "cc-kpi-onex",
       "text": "finish the project and show to Lilit",
-      "done": false,
+      "done": true,
       "created_at": "29/10/2026 15:28:45",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "30/10/2026 19:40:14",
+      "filed_at": "30/10/2026 19:40:16",
       "files": []
     },
     {
