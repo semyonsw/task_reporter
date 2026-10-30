@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 101,
+  "seq": 103,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1337,6 +1337,32 @@
       "created_at": "28/10/2026 15:47:48",
       "done_at": "28/10/2026 20:02:42",
       "filed_at": "28/10/2026 20:02:45",
+      "files": []
+    },
+    {
+      "id": "LbkYb4yy8Wg",
+      "seq": 102,
+      "order": null,
+      "date": "2026-10-29",
+      "project": "cc-kpi-onex",
+      "text": "finish the project and show to Lilit",
+      "done": false,
+      "created_at": "29/10/2026 15:28:45",
+      "done_at": null,
+      "filed_at": null,
+      "files": []
+    },
+    {
+      "id": "vaiOjwjKEwI",
+      "seq": 103,
+      "order": null,
+      "date": "2026-10-30",
+      "project": "cc-kpi-onex",
+      "text": "1. Absence & Attendance Automation\n- Replaced manual HR spreadsheets with a live monthly calendar grid tracking daily attendance per agent.\n- Added smart status entries: Absent (excused/unexcused), Late (check-in time + minutes), Holiday, Not checked in, and Not checked out.\n- Implemented automatic compensation calculations: <5 min late is forgiven and does not affect ratings, 5-10 min late adds +30 min work-off, and >10 min late adds +1 hr work-off.\n- Added multi-cell bulk selection (both drag-to-select and Shift/Ctrl + Click) to mark holidays for multiple days in one click.\n- Added Call, Chat, and Desk sub-tabs to view and manage attendance by department.\n- Connected Absence directly to the Motivation Scorecard as read-only automated counts with hover source hints, and fixed background cache updates so marks stay locked and visible.\n\n2. Productivity & Chat KPI Engine\n- Separated Productivity into Call and Chat tabs with matching layouts.\n- Built Chat KPI formulas using Ladesk chats + answers with tenure-based hourly targets (Level I: 15/hr, Level II: 20/hr, Level III: 25/hr).\n- Added inline agent editing pencil on Chat rows matching the Call section.\n- Added quick date filters: Today, Yesterday, Last week, Last month, and Custom calendar range.\n\n3. UI & Experience Improvements\n- Made the top navigation and logo sticky during vertical scrolling.\n- Compacted late timestamps to a clean single line (e.g., Late 09:07 · 7 min) to prevent table overflow.\n\nKey Skills & Impact Demonstrated:\n- Business Process Automation: Converted complex manual HR tracking and compensation rules into real-time automated workflows.\n- Reactive Data Architecture: Unified independent data sources (Absence grid, Ladesk API, Motivation Scorecard) with protected historical state.\n- High-Density UI Design: Built efficient data tables with drag selection, responsive filtering, and department-level segmentation.",
+      "done": true,
+      "created_at": "30/10/2026 19:40:09",
+      "done_at": "30/10/2026 19:40:10",
+      "filed_at": "30/10/2026 19:40:12",
       "files": []
     }
   ],
