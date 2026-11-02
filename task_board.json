@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 103,
+  "seq": 104,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1363,6 +1363,19 @@
       "created_at": "30/10/2026 19:40:09",
       "done_at": "30/10/2026 19:40:10",
       "filed_at": "30/10/2026 19:40:12",
+      "files": []
+    },
+    {
+      "id": "esAbev9FLUM",
+      "seq": 104,
+      "order": null,
+      "date": "2026-11-02",
+      "project": "cc-kpi-onex",
+      "text": "Arakelwva's tasks:\n\nMissed Calls (Resolved+Unresolved) \nResolved Missed \nUnresolved Missed \nTotal Incoming (Completed + Missed)",
+      "done": true,
+      "created_at": "02/11/2026 16:27:52",
+      "done_at": "02/11/2026 19:57:35",
+      "filed_at": "02/11/2026 19:57:37",
       "files": []
     }
   ],
