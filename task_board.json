@@ -1398,10 +1398,10 @@
       "date": "2026-11-03",
       "project": "cc-kpi-onex",
       "text": "delete september and october statustics from the users profile page, make the month and year selection with dropdown ability button\n\ntotal calls (unresolved missed) - tenc el aagenty chi patasxanel, avelacnel pakagcum u jnjel  Unresolved Missed toxy\n\nresolved missed - missed a gnacel, bayc het en zangel\n\ncheck if the productivity is fixed for the whole month or always showing live score\n\nshow visual level bar to be filled corresponding to level, so 1% left to silver or other case should be shown user friendly was and bar filled nearly up to the silver level (screenshot provided)\n\ndesk workers should not have levels, remove all the levels, and show corresponding collected things (wait for sending the necessary information)",
-      "done": false,
+      "done": true,
       "created_at": "03/11/2026 17:59:48",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "03/11/2026 21:00:56",
+      "filed_at": "03/11/2026 21:00:57",
       "files": [
         {
           "name": "pasted-20261103-180122.png",
