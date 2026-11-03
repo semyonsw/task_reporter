@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 104,
+  "seq": 106,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1377,6 +1377,38 @@
       "done_at": "02/11/2026 19:57:35",
       "filed_at": "02/11/2026 19:57:37",
       "files": []
+    },
+    {
+      "id": "sr1CRMIaOmc",
+      "seq": 105,
+      "order": null,
+      "date": "2026-11-02",
+      "project": "cc-kpi-onex",
+      "text": "Arakelwva's tasks [CONTINUE] :\n\nMissed Calls (Resolved+Unresolved) \nResolved Missed \nUnresolved Missed \nTotal Incoming (Completed + Missed)",
+      "done": true,
+      "created_at": "02/11/2026 19:57:51",
+      "done_at": "03/11/2026 21:00:52",
+      "filed_at": "03/11/2026 21:00:54",
+      "files": []
+    },
+    {
+      "id": "XvftV0UhSKI",
+      "seq": 106,
+      "order": null,
+      "date": "2026-11-03",
+      "project": "cc-kpi-onex",
+      "text": "delete september and october statustics from the users profile page, make the month and year selection with dropdown ability button\n\ntotal calls (unresolved missed) - tenc el aagenty chi patasxanel, avelacnel pakagcum u jnjel  Unresolved Missed toxy\n\nresolved missed - missed a gnacel, bayc het en zangel\n\ncheck if the productivity is fixed for the whole month or always showing live score\n\nshow visual level bar to be filled corresponding to level, so 1% left to silver or other case should be shown user friendly was and bar filled nearly up to the silver level (screenshot provided)\n\ndesk workers should not have levels, remove all the levels, and show corresponding collected things (wait for sending the necessary information)",
+      "done": false,
+      "created_at": "03/11/2026 17:59:48",
+      "done_at": null,
+      "filed_at": null,
+      "files": [
+        {
+          "name": "pasted-20261103-180122.png",
+          "size": 349142,
+          "added_at": "03/11/2026 18:12:31"
+        }
+      ]
     }
   ],
   "projects": [
