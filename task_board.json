@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 108,
+  "seq": 110,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1435,11 +1435,37 @@
       "done_at": "04/11/2026 19:06:32",
       "filed_at": "04/11/2026 19:06:35",
       "files": []
+    },
+    {
+      "id": "CiPmng0J8nU",
+      "seq": 109,
+      "order": null,
+      "date": "2026-11-04",
+      "project": "ai-agents-scores",
+      "text": "1. Missed calls — one row now\n\"Total missed calls (unresolved missed)\" is the single box you type in; the\nextra \"Total calls (unresolved missed)\" row is gone. \"Resolved missed\",\n\"Missed Calls (Resolved+Unresolved)\" and \"Total Incoming\" all use that one\nnumber, so nothing is entered twice.\n\n2. Sunday text — back inside the table\nIt now centres over the table itself instead of drifting into the empty space\non the right. Checked on the Call, Chat and Desk tabs at both wide and normal\nscreen widths, and while scrolled sideways — centred exactly every time.\n\nTests: 180 passing (4 new), code checks clean.",
+      "done": true,
+      "created_at": "04/11/2026 19:21:38",
+      "done_at": "04/11/2026 19:28:12",
+      "filed_at": "04/11/2026 19:28:17",
+      "files": []
+    },
+    {
+      "id": "Oq7yWZAAu6A",
+      "seq": 110,
+      "order": null,
+      "date": "2026-11-04",
+      "project": "cc-kpi-onex",
+      "text": "1. Productivity Team Totals — Label & Input Consolidation\n• Corrected label location: moved \"(unresolved missed)\" to \"Total missed calls (unresolved missed)\" as requested.\n• Consolidated the duplicate missed-call inputs into one single, clean input field that feeds into all team calculations.\n• Added full fallback compatibility and unit tests (4 new tests).\n\n2. Absence Table — Sunday Label Viewport Centering\n• Fixed a bug where the green \"Sunday\" text floated outside into blank white space on wide displays.\n• Labels now dynamically center strictly within the visible table boundaries across all role tabs (Call, Chat, Desk) and viewport widths.\n\n3. Absence Table — Under-5-Minute Lates Display\n• Lates under 5 minutes now visibly show inside table cells with check-in time and duration (e.g., \"Late 09:03 · 3 min\").\n• Styled in muted grey so admins can easily verify the record without confusion.\n• Business rules preserved: does NOT count toward total lates or hurt ratings, but correctly adds the +30 min work-off time.\n• Updated popup hints and added automated test coverage.\n\nQuality & Verification:\n• 180 / 180 Vitest tests passing\n• Build status: OK (zero errors)\n• Currently active in preview, ready to be published.",
+      "done": true,
+      "created_at": "04/11/2026 19:28:11",
+      "done_at": "04/11/2026 19:28:13",
+      "filed_at": "04/11/2026 19:28:17",
+      "files": []
     }
   ],
   "projects": [
-    "ai-agents-scores",
     "cc-kpi-onex",
+    "ai-agents-scores",
     "onex-hr-insights",
     "task-report",
     "Blot",
