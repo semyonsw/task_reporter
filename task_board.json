@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 106,
+  "seq": 108,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1409,11 +1409,37 @@
           "added_at": "03/11/2026 18:12:31"
         }
       ]
+    },
+    {
+      "id": "8jLErHO1GHg",
+      "seq": 107,
+      "order": null,
+      "date": "2026-11-03",
+      "project": "cc-kpi-onex",
+      "text": "check whether everything's done",
+      "done": false,
+      "created_at": "03/11/2026 21:01:07",
+      "done_at": null,
+      "filed_at": null,
+      "files": []
+    },
+    {
+      "id": "dqq59-pdPBs",
+      "seq": 108,
+      "order": null,
+      "date": "2026-11-04",
+      "project": "ai-agents-scores",
+      "text": "1. Sunday rows fixed\nThe \"Sunday\" label in the Absence calendar now sits exactly in the middle\nof the visible table on any screen size, and stays centered while scrolling\nsideways.\n\n2. Wider workspace + calculation hints\nThe main page was widened so more columns fit without scrolling. Hovering a\nProductivity column header now shows a short note explaining where that\nnumber comes from (Ladesk, calls + outgoing, hours x level KPI, etc.).\n\n3. Column order board (new)\nA new panel under the Absence section lets you drag an agent's name to a new\nplace. Neighbouring names slide aside to show exactly where it will land, and\nyou can also reorder with arrow keys. Call, Chat and Desk each keep their own\nsaved order, shared across admin devices — so moving the first person to the\nlast is easy.\n\n4. Bug fixes\nFixed a name-ordering bug plus a drop and a loading issue found while testing.\n\n5. Testing\nAdded 12 new reordering test cases. Full suite: 176 tests passing, code\nchecks and build clean.\n\nSkills used: drag-and-drop UX with visual feedback, responsive layout,\nshared state persistence, automated testing and regression fixing.",
+      "done": true,
+      "created_at": "04/11/2026 19:06:28",
+      "done_at": "04/11/2026 19:06:32",
+      "filed_at": "04/11/2026 19:06:35",
+      "files": []
     }
   ],
   "projects": [
-    "cc-kpi-onex",
     "ai-agents-scores",
+    "cc-kpi-onex",
     "onex-hr-insights",
     "task-report",
     "Blot",
