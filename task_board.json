@@ -1417,10 +1417,10 @@
       "date": "2026-11-03",
       "project": "cc-kpi-onex",
       "text": "check whether everything's done",
-      "done": false,
+      "done": true,
       "created_at": "03/11/2026 21:01:07",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "04/11/2026 19:07:41",
+      "filed_at": "04/11/2026 19:07:42",
       "files": []
     },
     {
