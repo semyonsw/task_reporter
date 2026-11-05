@@ -1602,10 +1602,10 @@
       "date": "2026-11-05",
       "project": "cc-kpi-onex",
       "text": "'perk' name change to 'prize' in all the websites, cuz the perk word is too strick and the prize is more gifty and gamy and user friendly",
-      "done": false,
+      "done": true,
       "created_at": "05/11/2026 16:05:05",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "05/11/2026 17:17:45",
+      "filed_at": "05/11/2026 17:17:47",
       "files": []
     }
   ],
