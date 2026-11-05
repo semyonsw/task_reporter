@@ -1564,10 +1564,10 @@
       "date": "2026-11-05",
       "project": "cc-kpi-onex",
       "text": "the links for option perks should be shown to user also, so user can open, and see, and then decide which one she wants\n\nalso admin should have ablility to see the history of perk selections of the users with date-time",
-      "done": false,
+      "done": true,
       "created_at": "05/11/2026 16:02:08",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "05/11/2026 17:15:06",
+      "filed_at": "05/11/2026 17:15:53",
       "files": [
         {
           "name": "pasted-20261105-160212.png",
