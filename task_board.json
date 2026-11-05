@@ -1583,10 +1583,10 @@
       "date": "2026-11-05",
       "project": "cc-kpi-onex",
       "text": "user can select only one perk, and the ui  should get grey the perk part only, and state that \"you have chosed the perk\" kind of text so user can know that she can select only one perk and also when selected a perk the ui button should appear telling \"choose other perk\"",
-      "done": false,
+      "done": true,
       "created_at": "05/11/2026 16:04:21",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "05/11/2026 17:23:16",
+      "filed_at": "05/11/2026 17:23:18",
       "files": [
         {
           "name": "pasted-20261105-164956.png",
