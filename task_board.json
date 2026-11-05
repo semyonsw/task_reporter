@@ -1540,10 +1540,10 @@
       "date": "2026-11-05",
       "project": "cc-kpi-onex",
       "text": "make the 'you are here' to correspond to collected percents and left percents to next level, so the user should knwo, that she/he is soo close to the next level",
-      "done": false,
+      "done": true,
       "created_at": "05/11/2026 15:57:13",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "05/11/2026 17:14:18",
+      "filed_at": "05/11/2026 17:14:20",
       "files": [
         {
           "name": "pasted-20261105-155719.png",
