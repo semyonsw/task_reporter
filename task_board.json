@@ -1507,11 +1507,11 @@
       "order": null,
       "date": "2026-11-05",
       "project": "cc-kpi-onex",
-      "text": "delete the mentioned text and keep only unresolved missed\n\nadd total work to the missed calls (a + b)",
-      "done": false,
+      "text": "delete the mentioned text and keep only 'Unresolved Missed'\n\nand delete the very bottom row 'Total Incoming'",
+      "done": true,
       "created_at": "05/11/2026 15:40:57",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "05/11/2026 17:13:58",
+      "filed_at": "05/11/2026 17:14:01",
       "files": [
         {
           "name": "pasted-20261105-154105.png",
@@ -1587,7 +1587,13 @@
       "created_at": "05/11/2026 16:04:21",
       "done_at": null,
       "filed_at": null,
-      "files": []
+      "files": [
+        {
+          "name": "pasted-20261105-164956.png",
+          "size": 254677,
+          "added_at": "05/11/2026 16:49:57"
+        }
+      ]
     },
     {
       "id": "XIT3b0xYIfg",
