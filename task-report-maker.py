@@ -1268,6 +1268,16 @@ def _remember_project(board: dict, name: str):
     ]
 
 
+# Where a task stands while it is being worked on - separate from the "done"
+# tick, which only means "file this on the next File Checked Tasks".
+TASK_STATUSES = ("todo", "doing", "review")
+
+
+def _clean_status(value) -> str:
+    value = str(value or "").strip().lower()
+    return value if value in TASK_STATUSES else TASK_STATUSES[0]
+
+
 def _clean_task(raw, seq_hint: int) -> dict:
     """Normalise one stored task, so a hand-edited file cannot break the UI."""
     if not isinstance(raw, dict):
@@ -1290,6 +1300,7 @@ def _clean_task(raw, seq_hint: int) -> dict:
         "project": str(raw.get("project") or "").strip(),
         "text": text,
         "done": bool(raw.get("done")),
+        "status": _clean_status(raw.get("status")),
         "created_at": str(raw.get("created_at") or "").strip(),
         "done_at": str(raw.get("done_at") or "").strip() or None,
         "filed_at": filed_at,
@@ -1468,6 +1479,7 @@ def add_task(date, project: str, text: str) -> dict:
             "project": str(project or "").strip(),
             "text": text,
             "done": False,
+            "status": TASK_STATUSES[0],
             "created_at": datetime.now().strftime(TIMESTAMP_FORMAT),
             "done_at": None,
             "filed_at": None,
@@ -1488,11 +1500,19 @@ def update_task(task_id: str, **changes) -> dict:
             raise ValueError("The task cannot be empty.")
         changes["text"] = text
 
+    if "status" in changes:
+        status = str(changes["status"] or "").strip().lower()
+        if status not in TASK_STATUSES:
+            raise ValueError(f"Unknown status '{status}'.")
+        changes["status"] = status
+
     with _BOARD_LOCK:
         board = _read_board()
         for task in board["tasks"]:
             if task["id"] != task_id:
                 continue
+            if "status" in changes:
+                task["status"] = changes["status"]
             if "text" in changes:
                 task["text"] = changes["text"]
             if "project" in changes:
@@ -3408,7 +3428,41 @@ kbd {
 .c-date { flex: none; width: 150px; height: 40px; font-variant-numeric: tabular-nums; }
 .c-proj { flex: none; width: 190px; }
 .c-proj .input { height: 40px; }
-#taskText { flex: 1; min-width: 220px; min-height: 40px; padding: 9px 12px; line-height: 1.45; overflow-y: auto; }
+.c-text { flex: 1; min-width: 220px; display: flex; flex-direction: column; }
+#taskText { min-height: 40px; padding: 9px 12px; line-height: 1.45; overflow-y: auto; }
+/* Files pasted into the add-task box sit in a tray joined to its bottom edge. */
+.c-attach {
+  display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 10px;
+  background: var(--color-surface); border: 1px solid var(--color-divider); border-top: 1px dashed var(--color-divider);
+}
+.c-text:hover .c-attach { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); border-top-color: var(--color-divider); }
+.c-text:focus-within .c-attach { border-color: var(--color-accent); border-top-color: var(--color-divider); }
+.c-text.has-files #taskText { border-bottom-color: transparent; }
+.c-text.has-files:focus-within #taskText { border-bottom-color: transparent; }
+.c-att {
+  position: relative; display: flex; align-items: center; gap: 8px; max-width: 240px;
+  padding: 4px 30px 4px 4px; background: var(--color-bg); border: 1px solid var(--color-divider);
+  animation: att-in .16s ease-out;
+}
+@keyframes att-in { from { opacity: 0; transform: translateY(-3px) scale(.97); } to { opacity: 1; transform: none; } }
+.c-att-thumb {
+  flex: none; width: 44px; height: 44px; display: grid; place-items: center; overflow: hidden;
+  background: var(--color-surface); color: var(--muted); cursor: zoom-in;
+}
+.c-att-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.c-att-meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.c-att-name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-att-size { font-size: 11px; color: var(--muted); }
+.c-att-x {
+  position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0;
+  display: grid; place-items: center; border: none; background: transparent; color: var(--muted); cursor: pointer;
+}
+.c-att-x:hover, .c-att-x:focus-visible { background: var(--color-accent-100); color: var(--color-accent-700); outline: none; }
+.c-att-big {
+  position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 32px;
+  background: color-mix(in srgb, #000 72%, transparent); cursor: zoom-out;
+}
+.c-att-big img { max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
 .c-add { flex: none; height: 40px; min-width: 124px; }
 
 .combo { position: relative; display: flex; }
@@ -3491,6 +3545,27 @@ kbd {
 .task.is-done .box { background: var(--color-accent); border-color: var(--color-accent); }
 .task.is-done .box svg { visibility: visible; }
 .task.is-filed .box { background: color-mix(in srgb, var(--color-text) 30%, transparent); border-color: transparent; cursor: default; }
+/* Work status: a pill that steps not started -> in progress -> needs check. */
+.status-pill {
+  --st: #e5484d;
+  flex: none; display: inline-flex; align-items: center; gap: 6px; width: 104px; height: 22px; padding: 0 8px;
+  font-size: 11px; font-weight: 700; letter-spacing: .01em; white-space: nowrap; cursor: pointer; user-select: none;
+  color: color-mix(in srgb, var(--st) 72%, var(--color-text));
+  background: color-mix(in srgb, var(--st) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st) 55%, transparent);
+  transition: background .15s, border-color .15s, color .15s;
+}
+.status-pill::before {
+  content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--st);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--st) 22%, transparent);
+}
+.status-pill:hover:not(:disabled) { background: color-mix(in srgb, var(--st) 24%, transparent); border-color: var(--st); }
+.status-pill:focus-visible { outline: 2px solid var(--st); outline-offset: 1px; }
+.status-pill:disabled { cursor: default; opacity: .55; }
+.status-pill.st-doing { --st: #e5a800; }
+.status-pill.st-review { --st: #2f9e5b; }
+.status-pill.bump { animation: st-bump .18s ease-out; }
+@keyframes st-bump { 50% { transform: scale(1.06); } }
 .task-text {
   flex: 1; min-width: 0; padding: 0; border: none; background: transparent; text-align: left;
   font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text);
@@ -3679,7 +3754,7 @@ kbd {
   .header { padding: 0 12px; gap: 8px; }
   .view { padding: 16px; }
   .c-date, .c-proj { flex: 1 1 140px; width: auto; }
-  #taskText { flex: 1 0 100%; min-width: 0; }
+  .c-text { flex: 1 0 100%; min-width: 0; }
   .c-add { flex: 1 0 100%; }
   .edit-row { grid-template-columns: 1fr; }
   .file-row { flex-wrap: wrap; }
@@ -3743,8 +3818,11 @@ kbd {
           <button type="button" class="combo-caret" id="taskProjectCaret" tabindex="-1" aria-label="Show existing projects"><i data-icon="chevron" data-size="16" data-stroke="2"></i></button>
           <div class="combo-panel" id="taskProjectPanel" role="listbox"></div>
         </div>
-        <textarea id="taskText" class="input" rows="1"
-                  placeholder="What needs doing&#8230;   Shift + Enter for a new line"></textarea>
+        <div class="c-text" id="taskTextWrap">
+          <textarea id="taskText" class="input" rows="1"
+                    placeholder="What needs doing&#8230;   Shift + Enter for a new line"></textarea>
+          <div class="c-attach hidden" id="taskAttach" aria-label="Attached files"></div>
+        </div>
         <button type="submit" class="btn btn-primary c-add"><i data-icon="plus" data-size="16" data-stroke="2.5"></i>Add Task</button>
       </form>
 
@@ -3948,7 +4026,7 @@ kbd {
       <tr><td><kbd>Ctrl + H</kbd></td><td>Task reports</td></tr>
       <tr><td><kbd>&#8593;</kbd> <kbd>&#8595;</kbd> <kbd>Enter</kbd></td><td>In the project box: pick from the list, or type a new name and press Enter</td></tr>
       <tr><td><kbd>Alt + &#8593;</kbd> / <kbd>Alt + &#8595;</kbd></td><td>On a focused task: move it up or down</td></tr>
-      <tr><td><kbd>Ctrl + V</kbd></td><td>In a task's files: paste an image</td></tr>
+      <tr><td><kbd>Ctrl + V</kbd></td><td>In the add-task box or a task's files: attach a copied image</td></tr>
       <tr><td><kbd>Ctrl + Z</kbd></td><td>Undo the last delete, file or clear (outside a text box)</td></tr>
       <tr><td><kbd id="helpHotkey">Ctrl + Alt + T</kbd></td><td>Quick-add a task from anywhere (tray)</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Close a dialog — asks first if there are unsaved changes</td></tr>
@@ -4901,7 +4979,8 @@ async function loadBoard() {
     }
     return;
   }
-  boardTasks = (out.tasks || []).map((task) => Object.assign({ files: [] }, task));
+  boardTasks = (out.tasks || []).map((task) => Object.assign({ files: [] }, task,
+    pendingStatus.has(task.id) ? { status: pendingStatus.get(task.id) } : null));
   boardCounts = out.counts || boardCounts;
   boardRevision = out.revision;
   setProjectOptions(out.projects || []);
@@ -5255,6 +5334,13 @@ function taskRow(task) {
   box.addEventListener("click", () => toggleTask(task, !task.done));
   row.appendChild(box);
 
+  const pill = el("button", "status-pill");
+  pill.type = "button";
+  pill.disabled = filed;
+  paintStatus(pill, task.status);
+  pill.addEventListener("click", () => cycleStatus(task, pill));
+  row.appendChild(pill);
+
   // A button: it is genuinely the way into the edit dialog, and textContent
   // keeps arbitrary task text out of the parser.
   const text = el("button", "task-text", task.text);
@@ -5299,6 +5385,56 @@ function taskRow(task) {
   });
   wireTaskDrag(row, task);
   return row;
+}
+
+/* ----------------------------------------------------------- task status */
+
+const STATUS_ORDER = ["todo", "doing", "review"];
+const STATUS_LABEL = { todo: "Not started", doing: "In progress", review: "Needs check" };
+const STATUS_HINT = {
+  todo: "Not started yet",
+  doing: "In progress",
+  review: "Done - needs checking",
+};
+
+function paintStatus(pill, status) {
+  const st = STATUS_ORDER.includes(status) ? status : "todo";
+  const next = STATUS_ORDER[(STATUS_ORDER.indexOf(st) + 1) % STATUS_ORDER.length];
+  pill.className = "status-pill st-" + st;
+  pill.textContent = STATUS_LABEL[st];
+  pill.title = STATUS_HINT[st] + (pill.disabled ? "" : "\nClick: " + STATUS_LABEL[next].toLowerCase());
+  pill.setAttribute("aria-label", "Status: " + STATUS_HINT[st]);
+}
+
+// Clicks change the pill at once; the board is told only once the clicking
+// stops, so stepping through to the status you want is one save, not three.
+const statusTimers = new Map();
+const pendingStatus = new Map();   // id -> status clicked but not saved yet
+function cycleStatus(task, pill) {
+  const current = STATUS_ORDER.includes(task.status) ? task.status : "todo";
+  const next = STATUS_ORDER[(STATUS_ORDER.indexOf(current) + 1) % STATUS_ORDER.length];
+  task.status = next;
+  paintStatus(pill, next);
+  pill.classList.remove("bump");
+  void pill.offsetWidth;
+  pill.classList.add("bump");
+  clearTimeout(statusTimers.get(task.id));
+  pendingStatus.set(task.id, next);
+  statusTimers.set(task.id, setTimeout(() => saveStatus(task.id, next), 450));
+}
+
+async function saveStatus(id, status) {
+  statusTimers.delete(id);
+  try {
+    const out = await api("/api/tasks/update", { id: id, status: status });
+    if (pendingStatus.get(id) === status) pendingStatus.delete(id);
+    if (!out.ok) { flashBoard(out.message || "The status was not saved", "danger"); await loadBoard(); return; }
+    flashBoard("Status: " + STATUS_HINT[status], "success");
+  } catch (err) {
+    pendingStatus.delete(id);
+    flashBoard("Lost contact with the reporter - the status was not saved", "danger");
+    await loadBoard();
+  }
 }
 
 async function copyTask(text) {
@@ -5478,9 +5614,113 @@ async function addTask(event) {
     textBox.value = "";
     fitTaskBox(textBox);
     clearDraft("task");
-    flashBoard("Task added", "success");
+    const pending = composerFiles;
+    composerFiles = [];
+    renderComposerFiles();
+    const problems = [];
+    for (const item of pending) {
+      try {
+        const up = await uploadTaskFile(out.task.id, item.file, item.name);
+        if (!up.ok) problems.push(item.name + ": " + (up.message || "not stored"));
+      } catch (err) {
+        problems.push(item.name + ": not stored");
+      }
+      if (item.url) URL.revokeObjectURL(item.url);
+    }
+    if (pending.length) await loadBoard();
+    if (problems.length) flashBoard("Task added, but " + problems.join(" · "), "danger");
+    else flashBoard(pending.length
+      ? "Task added with " + pending.length + " file" + (pending.length === 1 ? "" : "s")
+      : "Task added", "success");
   }
   textBox.focus();
+}
+
+/* ------------------------------------------------- files pasted into the composer */
+
+// Ctrl+V of an image while typing a new task attaches it right away; the
+// files go up once the task itself exists.
+let composerFiles = [];    // { file, name, size, url }
+
+function composerStage(list) {
+  let rejected = 0;
+  for (const file of Array.from(list || [])) {
+    if (file.size > CFG.maxFileBytes) { rejected += 1; continue; }
+    let name = file.name || "";
+    if (!name || name === "image.png") name = pastedName(file.type);
+    // Two pastes in the same second would otherwise share a name.
+    if (composerFiles.some((item) => item.name === name)) {
+      const dot = name.lastIndexOf(".");
+      const stem = dot > 0 ? name.slice(0, dot) : name;
+      const ext = dot > 0 ? name.slice(dot) : "";
+      let n = 2;
+      while (composerFiles.some((item) => item.name === stem + "-" + n + ext)) n += 1;
+      name = stem + "-" + n + ext;
+    }
+    composerFiles.push({
+      file: file, name: name, size: file.size,
+      url: /^image\//.test(file.type) ? URL.createObjectURL(file) : null,
+    });
+  }
+  if (rejected) {
+    flashBoard(rejected + (rejected === 1 ? " file is" : " files are") + " over " +
+      Math.round(CFG.maxFileBytes / 1048576) + " MB and " + (rejected === 1 ? "was" : "were") + " not attached", "danger");
+  }
+  renderComposerFiles();
+}
+
+function unstageComposerFile(item) {
+  composerFiles = composerFiles.filter((other) => other !== item);
+  if (item.url) URL.revokeObjectURL(item.url);
+  renderComposerFiles();
+  $("taskText").focus();
+}
+
+function previewComposerImage(url) {
+  const layer = el("div", "c-att-big");
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = "";
+  layer.appendChild(img);
+  const close = () => { layer.remove(); document.removeEventListener("keydown", onKey, true); $("taskText").focus(); };
+  const onKey = (event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } };
+  layer.addEventListener("click", close);
+  document.addEventListener("keydown", onKey, true);
+  document.body.appendChild(layer);
+}
+
+function renderComposerFiles() {
+  const tray = $("taskAttach");
+  tray.innerHTML = "";
+  tray.classList.toggle("hidden", !composerFiles.length);
+  $("taskTextWrap").classList.toggle("has-files", composerFiles.length > 0);
+  for (const item of composerFiles) {
+    const card = el("div", "c-att");
+    card.title = item.name;
+    const thumb = el("div", "c-att-thumb");
+    if (item.url) {
+      const img = document.createElement("img");
+      img.src = item.url;
+      img.alt = "";
+      thumb.appendChild(img);
+      thumb.title = "Click to preview";
+      thumb.addEventListener("click", () => previewComposerImage(item.url));
+    } else {
+      thumb.appendChild(icon(IMAGE_NAME.test(item.name) ? "image" : "paperclip", 18, 2));
+      thumb.style.cursor = "default";
+    }
+    const meta = el("div", "c-att-meta");
+    meta.appendChild(el("span", "c-att-name", item.name));
+    meta.appendChild(el("span", "c-att-size", sizeLabel(item.size)));
+    const drop = el("button", "c-att-x");
+    drop.type = "button";
+    drop.title = "Remove attachment";
+    drop.setAttribute("aria-label", "Remove " + item.name);
+    drop.appendChild(icon("x", 14, 2.5));
+    drop.addEventListener("click", () => unstageComposerFile(item));
+    card.append(thumb, meta, drop);
+    tray.appendChild(card);
+  }
 }
 
 async function toggleTask(task, done) {
@@ -5814,13 +6054,20 @@ document.addEventListener("drop", (event) => {
 });
 
 // Ctrl+V of an image (a screenshot, mostly) while the dialog is open.
+// The same goes for the add-task box on the board.
 document.addEventListener("paste", (event) => {
-  const target = IS_QUICK ? "quick" : topLayer() === "taskEditBackdrop" ? "task" : null;
+  const target = IS_QUICK ? "quick"
+    : topLayer() === "taskEditBackdrop" ? "task"
+    : document.activeElement === $("taskText") ? "composer" : null;
   if (!target || !event.clipboardData) return;
   const files = Array.from(event.clipboardData.files || []);
   if (!files.length) return;
+  // Copying cells from Excel or Word puts a picture next to the text;
+  // there the text is what was meant.
+  if (target === "composer" && (event.clipboardData.getData("text/plain") || "").trim()) return;
   event.preventDefault();
   if (target === "task") stageFiles(files);
+  else if (target === "composer") composerStage(files);
   else quickStage(files);
 });
 
@@ -6403,6 +6650,13 @@ function startMain() {
     }
   });
   taskText.addEventListener("input", () => { fitTaskBox(taskText); setDraft("task", taskText.value); });
+  // Backspace in an empty box takes back the last attachment.
+  taskText.addEventListener("keydown", (event) => {
+    if (event.key === "Backspace" && !taskText.value && composerFiles.length) {
+      event.preventDefault();
+      unstageComposerFile(composerFiles[composerFiles.length - 1]);
+    }
+  });
 
   attachProjectCombo($("taskProject"), $("taskProjectPanel"), $("taskProjectCaret"), () => taskText.focus());
   attachProjectCombo($("tProject"), $("tProjectPanel"), $("tProjectCaret"), () => $("tText").focus());
@@ -7161,7 +7415,7 @@ def _web_update_task(payload: dict) -> dict:
     # Only the keys the page actually sent are applied, so ticking a box cannot
     # blank the text and editing the text cannot untick the box.
     changes = {}
-    for key in ("text", "project", "date", "done"):
+    for key in ("text", "project", "date", "done", "status"):
         if key in payload:
             changes[key] = payload[key]
     if not changes:
