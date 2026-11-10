@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 119,
+  "seq": 120,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1608,7 +1608,7 @@
       "project": "ONEX-Academy",
       "text": "admin should have ablility open and close globally tests for all the users (and also the personal test ones)",
       "done": false,
-      "status": "doing",
+      "status": "review",
       "created_at": "05/11/2026 15:34:49",
       "done_at": null,
       "filed_at": null,
@@ -1726,13 +1726,27 @@
       "done_at": "05/11/2026 17:17:45",
       "filed_at": "05/11/2026 17:17:47",
       "files": []
+    },
+    {
+      "id": "hzfN9kD8gws",
+      "seq": 120,
+      "order": null,
+      "date": "2026-11-06",
+      "project": "Wear_AI",
+      "text": "make the state of the project correct and valid, with all the nice working apis and n8n workflows",
+      "done": true,
+      "status": "review",
+      "created_at": "06/11/2026 14:10:13",
+      "done_at": "10/11/2026 14:51:09",
+      "filed_at": "10/11/2026 14:51:13",
+      "files": []
     }
   ],
   "projects": [
+    "Wear_AI",
     "cc-kpi-onex",
     "task-report",
     "ONEX-Academy",
-    "Wear_AI",
     "ai-agents-scores",
     "onex-hr-insights",
     "Blot",
