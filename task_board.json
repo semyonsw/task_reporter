@@ -1607,11 +1607,11 @@
       "date": "2026-11-05",
       "project": "ONEX-Academy",
       "text": "admin should have ablility open and close globally tests for all the users (and also the personal test ones)",
-      "done": false,
+      "done": true,
       "status": "review",
       "created_at": "05/11/2026 15:34:49",
-      "done_at": null,
-      "filed_at": null,
+      "done_at": "10/11/2026 14:52:04",
+      "filed_at": "10/11/2026 14:52:05",
       "files": []
     },
     {
