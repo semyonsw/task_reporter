@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 122,
+  "seq": 123,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1768,13 +1768,27 @@
       "done_at": "10/11/2026 15:15:14",
       "filed_at": "10/11/2026 15:15:16",
       "files": []
+    },
+    {
+      "id": "I6ik6Z9DBdM",
+      "seq": 123,
+      "order": null,
+      "date": "2026-11-10",
+      "project": "ONEX-Academy",
+      "text": "Checked admin controls: global test closure and per-test weekly limits already exist.\nConfirmed what’s missing: per-agent test locks, different allowances for each agent, and flashcard attempt limits.\nFixed the selected file-access issue and confirmed it with a follow-up security scan.",
+      "done": true,
+      "status": "review",
+      "created_at": "10/11/2026 15:16:21",
+      "done_at": "10/11/2026 15:16:24",
+      "filed_at": "10/11/2026 15:16:25",
+      "files": []
     }
   ],
   "projects": [
+    "ONEX-Academy",
     "cc-kpi-onex",
     "Wear_AI",
     "task-report",
-    "ONEX-Academy",
     "ai-agents-scores",
     "onex-hr-insights",
     "Blot",
