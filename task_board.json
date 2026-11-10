@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "seq": 121,
+  "seq": 122,
   "tasks": [
     {
       "id": "U-zgZI20Wbo",
@@ -1754,11 +1754,25 @@
       "done_at": "10/11/2026 15:14:21",
       "filed_at": "10/11/2026 15:14:23",
       "files": []
+    },
+    {
+      "id": "IBKY8-jhs1c",
+      "seq": 122,
+      "order": null,
+      "date": "2026-11-10",
+      "project": "cc-kpi-onex",
+      "text": "Desk scores editable in Productivity — admins can now type Customer Feedback and Google Review Comment straight in the Desk tab. The numbers match the Scorecard and appear on the employee's page.\n\nLevel progress bar fixed — \"You are here\" now sits at the real collected percentage. Before, anyone past about 65% saw a completely full bar; now 85% looks like 85% and the gap to the next level stays visible.\n\nAbsence column names pinned — when you scroll down the month grid, the names of the people stay fixed at the top, and they keep lining up with their columns when you scroll sideways.\n\nMonth dropdown in Productivity — one button at the top opens a scrollable list of every saved month, newest first, with the current one ticked. Click a month and the page switches to it.",
+      "done": true,
+      "status": "review",
+      "created_at": "10/11/2026 15:15:11",
+      "done_at": "10/11/2026 15:15:14",
+      "filed_at": "10/11/2026 15:15:16",
+      "files": []
     }
   ],
   "projects": [
-    "Wear_AI",
     "cc-kpi-onex",
+    "Wear_AI",
     "task-report",
     "ONEX-Academy",
     "ai-agents-scores",
